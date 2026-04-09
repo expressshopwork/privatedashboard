@@ -1,0 +1,54 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Customer {
+  id        Int      @id @default(autoincrement())
+  name      String
+  phone     String   @unique
+  email     String?
+  notes     String?
+  createdAt DateTime @default(now())
+  sales     Sale[]
+  topups    TopUp[]
+}
+
+model Sale {
+  id           Int       @id @default(autoincrement())
+  customerId   Int?
+  customer     Customer? @relation(fields: [customerId], references: [id])
+  type         String
+  quantity     Float?
+  unitPrice    Float?
+  totalAmount  Float
+  pointsEarned Float?
+  date         DateTime  @default(now())
+  notes        String?
+  createdAt    DateTime  @default(now())
+}
+
+model TopUp {
+  id            Int       @id @default(autoincrement())
+  customerId    Int?
+  customer      Customer? @relation(fields: [customerId], references: [id])
+  customerPhone String
+  customerName  String
+  product       String
+  lastTopUpDate DateTime
+  paymentPeriod Int
+  expireDate    DateTime
+  createdAt     DateTime  @default(now())
+}
+
+model KPISetting {
+  id                   Int   @id @default(autoincrement())
+  dailyUnitTarget      Float @default(0)
+  dailyPointTarget     Float @default(0)
+  monthlyRevenueTarget Float @default(0)
+  customerGrowthTarget Float @default(0)
+}
