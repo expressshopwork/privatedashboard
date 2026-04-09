@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { addMonths } from 'date-fns'
 import { prisma } from '@/lib/prisma'
 
 export async function GET() {
@@ -13,9 +14,13 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const { customerId, customerPhone, customerName, product, lastTopUpDate, paymentPeriod } = body
 
+  const months = parseInt(paymentPeriod)
+  if (isNaN(months) || months < 1) {
+    return NextResponse.json({ error: 'paymentPeriod must be a positive integer' }, { status: 400 })
+  }
+
   const last = new Date(lastTopUpDate)
-  const expire = new Date(last)
-  expire.setMonth(expire.getMonth() + parseInt(paymentPeriod))
+  const expire = addMonths(last, months)
 
   const topup = await prisma.topUp.create({
     data: {

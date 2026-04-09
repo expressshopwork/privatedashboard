@@ -38,10 +38,10 @@ export async function POST(req: NextRequest) {
     data: {
       customerId: customerId ? parseInt(customerId) : null,
       type,
-      quantity: quantity ? parseFloat(quantity) : null,
-      unitPrice: unitPrice ? parseFloat(unitPrice) : null,
+      quantity: quantity !== null && quantity !== undefined && quantity !== '' ? parseFloat(quantity) : null,
+      unitPrice: unitPrice !== null && unitPrice !== undefined && unitPrice !== '' ? parseFloat(unitPrice) : null,
       totalAmount: parseFloat(totalAmount),
-      pointsEarned: pointsEarned ? parseFloat(pointsEarned) : null,
+      pointsEarned: pointsEarned !== null && pointsEarned !== undefined && pointsEarned !== '' ? parseFloat(pointsEarned) : null,
       date: date ? new Date(date) : new Date(),
       notes,
     },

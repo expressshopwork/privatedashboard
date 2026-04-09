@@ -3,6 +3,9 @@ import { prisma } from '@/lib/prisma'
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   const id = parseInt(params.id)
+  if (isNaN(id)) {
+    return NextResponse.json({ error: 'Invalid ID' }, { status: 400 })
+  }
   const body = await req.json()
   const { name, phone, email, notes } = body
 
@@ -16,6 +19,9 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const id = parseInt(params.id)
+  if (isNaN(id)) {
+    return NextResponse.json({ error: 'Invalid ID' }, { status: 400 })
+  }
   await prisma.customer.delete({ where: { id } })
   return NextResponse.json({ success: true })
 }
