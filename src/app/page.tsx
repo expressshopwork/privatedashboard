@@ -4,46 +4,7 @@ import { useEffect, useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { ShoppingBag, DollarSign, Users, Zap, TrendingUp } from 'lucide-react'
 import { format } from 'date-fns'
-
-interface KPIs {
-  salesToday: number
-  revenueToday: number
-  totalCustomers: number
-  activeTopups: number
-}
-
-interface Sale {
-  id: number
-  type: string
-  totalAmount: number
-  quantity: number | null
-  pointsEarned: number | null
-  date: string
-  customer: { name: string } | null
-  notes: string | null
-}
-
-interface TopUp {
-  id: number
-  customerName: string
-  product: string
-  expireDate: string
-  paymentPeriod: number
-}
-
-interface WeeklyData {
-  date: string
-  units: number
-  points: number
-  revenue: number
-}
-
-interface DashboardData {
-  kpis: KPIs
-  recentSales: Sale[]
-  expiringTopups: TopUp[]
-  weeklyData: WeeklyData[]
-}
+import { getDashboardData, type DashboardData } from '@/lib/store'
 
 function KPICard({
   title,
@@ -77,13 +38,12 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/dashboard')
-      .then((r) => r.json())
-      .then((d) => {
-        setData(d)
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
+    try {
+      setData(getDashboardData())
+    } catch {
+      // leave data null
+    }
+    setLoading(false)
   }, [])
 
   if (loading) {

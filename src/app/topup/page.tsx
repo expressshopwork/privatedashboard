@@ -4,22 +4,14 @@ import { useEffect, useState } from 'react'
 import { Plus, Trash2, Zap } from 'lucide-react'
 import Modal from '@/components/Modal'
 import { format, addMonths, differenceInDays } from 'date-fns'
-
-interface TopUp {
-  id: number
-  customerName: string
-  customerPhone: string
-  product: string
-  lastTopUpDate: string
-  paymentPeriod: number
-  expireDate: string
-}
-
-interface Customer {
-  id: number
-  name: string
-  phone: string
-}
+import {
+  getTopups,
+  addTopup,
+  deleteTopup,
+  getCustomers,
+  type TopUp,
+  type Customer,
+} from '@/lib/store'
 
 const todayStr = () => new Date().toISOString().split('T')[0]
 
@@ -56,16 +48,14 @@ export default function TopUpPage() {
     }
   }
 
-  const fetchTopups = async () => {
+  const fetchTopups = () => {
     setLoading(true)
-    const res = await fetch('/api/topup')
-    setTopups(await res.json())
+    setTopups(getTopups())
     setLoading(false)
   }
 
-  const fetchCustomers = async () => {
-    const res = await fetch('/api/customers')
-    setCustomers(await res.json())
+  const fetchCustomers = () => {
+    setCustomers(getCustomers())
   }
 
   useEffect(() => {
@@ -82,12 +72,17 @@ export default function TopUpPage() {
     }
   }
 
-  const handleSave = async () => {
+  const handleSave = () => {
     setSaving(true)
-    await fetch('/api/topup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form),
+    const expire = computedExpire()
+    addTopup({
+      customerId: form.customerId ? parseInt(form.customerId) : null,
+      customerPhone: form.customerPhone,
+      customerName: form.customerName,
+      product: form.product,
+      lastTopUpDate: form.lastTopUpDate,
+      paymentPeriod: parseInt(form.paymentPeriod),
+      expireDate: expire ? expire.toISOString() : new Date().toISOString(),
     })
     setSaving(false)
     setModalOpen(false)
@@ -95,9 +90,9 @@ export default function TopUpPage() {
     fetchTopups()
   }
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = (id: number) => {
     if (!confirm('Delete this top-up?')) return
-    await fetch(`/api/topup/${id}`, { method: 'DELETE' })
+    deleteTopup(id)
     fetchTopups()
   }
 
