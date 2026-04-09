@@ -4,24 +4,14 @@ import { useEffect, useState } from 'react'
 import { Plus, Trash2, ShoppingCart, Filter } from 'lucide-react'
 import Modal from '@/components/Modal'
 import { format } from 'date-fns'
-
-interface Sale {
-  id: number
-  type: string
-  quantity: number | null
-  unitPrice: number | null
-  totalAmount: number
-  pointsEarned: number | null
-  date: string
-  notes: string | null
-  customer: { name: string } | null
-}
-
-interface Customer {
-  id: number
-  name: string
-  phone: string
-}
+import {
+  getSales,
+  addSale,
+  deleteSale,
+  getCustomers,
+  type Sale,
+  type Customer,
+} from '@/lib/store'
 
 const todayStr = () => new Date().toISOString().split('T')[0]
 
@@ -48,21 +38,20 @@ export default function SalesPage() {
   const [filterFrom, setFilterFrom] = useState('')
   const [filterTo, setFilterTo] = useState('')
 
-  const fetchSales = async () => {
+  const fetchSales = () => {
     setLoading(true)
-    const params = new URLSearchParams()
-    if (filterType) params.set('type', filterType)
-    if (filterFrom) params.set('from', filterFrom)
-    if (filterTo) params.set('to', filterTo)
-    const res = await fetch(`/api/sales?${params}`)
-    const data = await res.json()
-    setSales(data)
+    setSales(
+      getSales({
+        type: filterType || undefined,
+        from: filterFrom || undefined,
+        to: filterTo || undefined,
+      })
+    )
     setLoading(false)
   }
 
-  const fetchCustomers = async () => {
-    const res = await fetch('/api/customers')
-    setCustomers(await res.json())
+  const fetchCustomers = () => {
+    setCustomers(getCustomers())
   }
 
   useEffect(() => {
@@ -85,22 +74,17 @@ export default function SalesPage() {
     setForm(updated)
   }
 
-  const handleSave = async () => {
+  const handleSave = () => {
     setSaving(true)
-    const payload = {
-      customerId: form.customerId || null,
+    addSale({
+      customerId: form.customerId ? parseInt(form.customerId) : null,
       type: form.type,
-      quantity: form.type === 'unit' ? form.quantity : null,
-      unitPrice: form.type === 'unit' ? form.unitPrice : null,
-      totalAmount: form.type === 'unit' ? form.totalAmount : form.amountSpent,
-      pointsEarned: form.type === 'point' ? form.pointsEarned : null,
+      quantity: form.type === 'unit' && form.quantity ? parseFloat(form.quantity) : null,
+      unitPrice: form.type === 'unit' && form.unitPrice ? parseFloat(form.unitPrice) : null,
+      totalAmount: parseFloat(form.type === 'unit' ? form.totalAmount : form.amountSpent),
+      pointsEarned: form.type === 'point' && form.pointsEarned ? parseFloat(form.pointsEarned) : null,
       date: form.date,
-      notes: form.notes,
-    }
-    await fetch('/api/sales', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      notes: form.notes || null,
     })
     setSaving(false)
     setModalOpen(false)
@@ -108,9 +92,9 @@ export default function SalesPage() {
     fetchSales()
   }
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = (id: number) => {
     if (!confirm('Delete this sale?')) return
-    await fetch(`/api/sales/${id}`, { method: 'DELETE' })
+    deleteSale(id)
     fetchSales()
   }
 

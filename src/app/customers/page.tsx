@@ -4,16 +4,13 @@ import { useEffect, useState } from 'react'
 import { Plus, Search, Edit2, Trash2, Users } from 'lucide-react'
 import Modal from '@/components/Modal'
 import { format } from 'date-fns'
-
-interface Customer {
-  id: number
-  name: string
-  phone: string
-  email: string | null
-  notes: string | null
-  createdAt: string
-  _count: { sales: number }
-}
+import {
+  getCustomers,
+  addCustomer,
+  updateCustomer,
+  deleteCustomer,
+  type Customer,
+} from '@/lib/store'
 
 const emptyForm = { name: '', phone: '', email: '', notes: '' }
 
@@ -26,11 +23,9 @@ export default function CustomersPage() {
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
 
-  const fetchCustomers = async () => {
+  const fetchCustomers = () => {
     setLoading(true)
-    const res = await fetch(`/api/customers?search=${encodeURIComponent(search)}`)
-    const data = await res.json()
-    setCustomers(data)
+    setCustomers(getCustomers(search))
     setLoading(false)
   }
 
@@ -51,21 +46,13 @@ export default function CustomersPage() {
     setModalOpen(true)
   }
 
-  const handleSave = async () => {
+  const handleSave = () => {
     setSaving(true)
     try {
       if (editCustomer) {
-        await fetch(`/api/customers/${editCustomer.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(form),
-        })
+        updateCustomer(editCustomer.id, form)
       } else {
-        await fetch('/api/customers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(form),
-        })
+        addCustomer(form)
       }
       setModalOpen(false)
       fetchCustomers()
@@ -74,9 +61,9 @@ export default function CustomersPage() {
     }
   }
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = (id: number) => {
     if (!confirm('Delete this customer?')) return
-    await fetch(`/api/customers/${id}`, { method: 'DELETE' })
+    deleteCustomer(id)
     fetchCustomers()
   }
 

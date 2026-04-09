@@ -2,14 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Save, Settings } from 'lucide-react'
-
-interface KPISettings {
-  id: number
-  dailyUnitTarget: number
-  dailyPointTarget: number
-  monthlyRevenueTarget: number
-  customerGrowthTarget: number
-}
+import { getSettings, saveSettings, type KPISettings } from '@/lib/store'
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<KPISettings | null>(null)
@@ -23,26 +16,25 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
-    fetch('/api/settings')
-      .then((r) => r.json())
-      .then((data) => {
-        setSettings(data)
-        setForm({
-          dailyUnitTarget: String(data.dailyUnitTarget),
-          dailyPointTarget: String(data.dailyPointTarget),
-          monthlyRevenueTarget: String(data.monthlyRevenueTarget),
-          customerGrowthTarget: String(data.customerGrowthTarget),
-        })
-      })
+    const data = getSettings()
+    setSettings(data)
+    setForm({
+      dailyUnitTarget: String(data.dailyUnitTarget),
+      dailyPointTarget: String(data.dailyPointTarget),
+      monthlyRevenueTarget: String(data.monthlyRevenueTarget),
+      customerGrowthTarget: String(data.customerGrowthTarget),
+    })
   }, [])
 
-  const handleSave = async () => {
+  const handleSave = () => {
     setSaving(true)
-    await fetch('/api/settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form),
+    const updated = saveSettings({
+      dailyUnitTarget: parseFloat(form.dailyUnitTarget) || 0,
+      dailyPointTarget: parseFloat(form.dailyPointTarget) || 0,
+      monthlyRevenueTarget: parseFloat(form.monthlyRevenueTarget) || 0,
+      customerGrowthTarget: parseFloat(form.customerGrowthTarget) || 0,
     })
+    setSettings(updated)
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
