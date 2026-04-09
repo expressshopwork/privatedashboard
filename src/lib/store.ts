@@ -203,14 +203,10 @@ export function getSales(filters?: {
   const sales = readRawSales()
   const customers = readRawCustomers()
 
-  const withCustomer = sales.map((s) => ({
-    ...s,
-    customer: s.customerId
-      ? (customers.find((c) => c.id === s.customerId)
-          ? { name: customers.find((c) => c.id === s.customerId)!.name }
-          : null)
-      : null,
-  }))
+  const withCustomer = sales.map((s) => {
+    const found = s.customerId ? customers.find((c) => c.id === s.customerId) : undefined
+    return { ...s, customer: found ? { name: found.name } : null }
+  })
 
   return withCustomer
     .filter((s) => {
@@ -246,9 +242,10 @@ export function addSale(data: {
     date: data.date ? new Date(data.date).toISOString() : now,
     notes: data.notes ?? null,
     customer: data.customerId
-      ? (customers.find((c) => c.id === data.customerId)
-          ? { name: customers.find((c) => c.id === data.customerId)!.name }
-          : null)
+      ? (() => {
+          const found = customers.find((c) => c.id === data.customerId)
+          return found ? { name: found.name } : null
+        })()
       : null,
     createdAt: now,
   }
@@ -368,8 +365,8 @@ export function getDashboardData(): DashboardData {
       ...s,
       customer: s.customerId
         ? (() => {
-            const c = customers.find((c) => c.id === s.customerId)
-            return c ? { name: c.name } : null
+            const foundCustomer = customers.find((customer) => customer.id === s.customerId)
+            return foundCustomer ? { name: foundCustomer.name } : null
           })()
         : null,
     }))
