@@ -1,0 +1,16 @@
+{
+  "/_not-found": "app/_not-found.js",
+  "/api/customers/[id]/route": "app/api/customers/[id]/route.js",
+  "/api/sales/[id]/route": "app/api/sales/[id]/route.js",
+  "/api/customers/route": "app/api/customers/route.js",
+  "/api/dashboard/route": "app/api/dashboard/route.js",
+  "/api/sales/route": "app/api/sales/route.js",
+  "/api/settings/route": "app/api/settings/route.js",
+  "/api/topup/[id]/route": "app/api/topup/[id]/route.js",
+  "/page": "app/page.js",
+  "/sales/page": "app/sales/page.js",
+  "/api/topup/route": "app/api/topup/route.js",
+  "/customers/page": "app/customers/page.js",
+  "/settings/page": "app/settings/page.js",
+  "/topup/page": "app/topup/page.js"
+}
