@@ -164,7 +164,7 @@ export default function DashboardPage() {
   const [selectedKpiBranch, setSelectedKpiBranch] = useState('all')
   const [kpiData, setKpiData] = useState<KPIComputedRow[]>([])
 
-  const currentUser = getCurrentUser()
+  const [currentUser] = useState<AppUser | null>(() => getCurrentUser())
 
   const reload = () => {
     try {
