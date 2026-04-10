@@ -35,7 +35,6 @@ export default function SalesPage() {
   const [formMode, setFormMode] = useState<SaleMode>('unit')
   const [formDate, setFormDate] = useState(todayStr())
   const [formNotes, setFormNotes] = useState('')
-  const [formUser, setFormUser] = useState('')
   const [formPhone, setFormPhone] = useState('')
 
   // Edit modal state
@@ -59,7 +58,6 @@ export default function SalesPage() {
   const resetForm = useCallback(() => {
     setFormDate(todayStr())
     setFormNotes('')
-    setFormUser('')
     setFormPhone('')
     const ugv: Record<string, string> = {}
     for (const item of UNIT_GROUP_ITEMS) ugv[item.name] = ''
@@ -114,9 +112,9 @@ export default function SalesPage() {
 
   const handleSave = () => {
     setSaving(true)
-    // Build combined notes with user/phone info
+    // Build combined notes with agent/phone info
     const noteParts: string[] = []
-    if (formUser.trim()) noteParts.push(`User: ${formUser.trim()}`)
+    if (currentUser?.fullName) noteParts.push(`Agent: ${currentUser.fullName}`)
     if (formPhone.trim()) noteParts.push(`Phone: ${formPhone.trim()}`)
     if (formNotes.trim()) noteParts.push(formNotes.trim())
     const combinedNotes = noteParts.length > 0 ? noteParts.join(' | ') : null
@@ -303,6 +301,7 @@ export default function SalesPage() {
                 <th className="px-6 py-3 font-medium">Category</th>
                 <th className="px-6 py-3 font-medium">Type</th>
                 <th className="px-6 py-3 font-medium">Details</th>
+                <th className="px-6 py-3 font-medium">Agent</th>
                 <th className="px-6 py-3 font-medium">Date</th>
                 <th className="px-6 py-3 font-medium">Notes</th>
                 <th className="px-6 py-3 font-medium">Actions</th>
@@ -327,6 +326,7 @@ export default function SalesPage() {
                         : `${s.quantity ?? 0} units`
                       : `${s.quantity ?? 0} qty → ${s.pointsEarned ?? 0} pts`}
                   </td>
+                  <td className="px-6 py-4 text-gray-600">{s.createdBy || '—'}</td>
                   <td className="px-6 py-4 text-gray-500">{format(new Date(s.date), 'MMM d, yyyy')}</td>
                   <td className="px-6 py-4 text-gray-500 max-w-xs truncate">{s.notes ?? '—'}</td>
                   <td className="px-6 py-4">
@@ -377,16 +377,16 @@ export default function SalesPage() {
             />
           </div>
 
-          {/* User & Phone */}
+          {/* Agent & Phone */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">User</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Agent</label>
               <input
                 type="text"
-                value={formUser}
-                onChange={(e) => setFormUser(e.target.value)}
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
-                placeholder="Customer name"
+                value={currentUser?.fullName ?? ''}
+                readOnly
+                aria-label="Agent name (auto-filled from login)"
+                className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-100 text-gray-600 cursor-not-allowed focus:outline-none"
               />
             </div>
             <div>
