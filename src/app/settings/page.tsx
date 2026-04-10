@@ -1,416 +1,621 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Save, Settings, Calendar, Plus, Trash2 } from 'lucide-react'
+import { useEffect, useState, useCallback } from 'react'
 import {
-  getSettings,
-  saveSettings,
-  getBranches,
-  type KPISettings,
-  type SIPPositionConfig,
-  type NewSIPPositionConfig,
-  type KPIItem,
+  Settings,
+  Plus,
+  Trash2,
+  Pencil,
+  ChevronLeft,
+  ChevronRight,
+  Target,
+} from 'lucide-react'
+import Modal from '@/components/Modal'
+import {
+  getKPIs,
+  addKPI,
+  updateKPI,
+  deleteKPI,
+  getServicePointRules,
+  saveServicePointRules,
+  addServicePointRule,
+  deleteServicePointRule,
+  getUsers,
+  UNIT_GROUP_ITEMS,
+  DOLLAR_GROUP_ITEMS,
+  type KPIRecord,
+  type KPIMode,
+  type KPIAssigneeType,
+  type KPIPeriod,
+  type VolumeValueMode,
+  type CurrencyType,
+  type ServicePointRule,
+  type AppUser,
 } from '@/lib/store'
 
-export default function SettingsPage() {
-  const [settings, setSettings] = useState<KPISettings | null>(null)
-  const [currentScheme, setCurrentScheme] = useState<SIPPositionConfig[]>([])
-  const [newScheme, setNewScheme] = useState<NewSIPPositionConfig[]>([])
-  const [kpiItems, setKpiItems] = useState<KPIItem[]>([])
-  const [effectiveDate, setEffectiveDate] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [branches, setBranches] = useState<string[]>([])
-  const [selectedBranch, setSelectedBranch] = useState<string>('all')
-  const [selectedRole, setSelectedRole] = useState<'agent' | 'sup' | 'all'>('all')
+function currentMonth(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
 
-  useEffect(() => {
-    const data = getSettings()
-    setSettings(data)
-    setCurrentScheme(data.currentScheme.map((r) => ({ ...r })))
-    setNewScheme(data.newScheme.map((r) => ({ ...r })))
-    setKpiItems(data.kpiItems.map((r) => ({ ...r })))
-    setEffectiveDate(data.newSchemeEffectiveDate)
-    setBranches(getBranches())
-  }, [])
+function shiftMonth(month: string, delta: number): string {
+  const [y, m] = month.split('-').map(Number)
+  const d = new Date(y, m - 1 + delta, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function formatMonth(month: string): string {
+  const [y, m] = month.split('-').map(Number)
+  const d = new Date(y, m - 1, 1)
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long' })
+}
+
+const PRODUCT_OPTIONS = [
+  ...UNIT_GROUP_ITEMS.map((i) => i.name),
+  ...DOLLAR_GROUP_ITEMS.map((i) => i.name),
+]
+
+interface KPIFormData {
+  name: string
+  mode: KPIMode
+  assigneeType: KPIAssigneeType
+  assigneeId: number
+  period: KPIPeriod
+  volumeValueMode: VolumeValueMode
+  currencyType: CurrencyType
+  volumeProductFilter: string | null
+  volumeTarget: number
+  pointMin: number
+  pointGate: number
+  pointOtb: number
+  pointOab: number
+}
+
+const defaultForm: KPIFormData = {
+  name: '',
+  mode: 'volume',
+  assigneeType: 'agent',
+  assigneeId: 0,
+  period: 'monthly',
+  volumeValueMode: 'unit',
+  currencyType: 'USD',
+  volumeProductFilter: null,
+  volumeTarget: 0,
+  pointMin: 0,
+  pointGate: 0,
+  pointOtb: 0,
+  pointOab: 0,
+}
+
+export default function SettingsPage() {
+  const [month, setMonth] = useState(currentMonth)
+  const [kpis, setKpis] = useState<KPIRecord[]>([])
+  const [users, setUsers] = useState<AppUser[]>([])
+  const [rules, setRules] = useState<ServicePointRule[]>([])
+
+  // Modal state
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [form, setForm] = useState<KPIFormData>({ ...defaultForm })
+
+  // Rule inline add
+  const [newRuleName, setNewRuleName] = useState('')
+  const [newRuleRate, setNewRuleRate] = useState('1')
+  const [newRuleAddOn, setNewRuleAddOn] = useState('0')
+
+  const refresh = useCallback(() => {
+    setKpis(getKPIs({ month }))
+    setUsers(getUsers())
+    setRules(getServicePointRules())
+  }, [month])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  // Helpers
+  const getUserName = (id: number) => users.find((u) => u.id === id)?.fullName ?? `User #${id}`
+
+  const assigneeCandidates = form.assigneeType === 'shop'
+    ? users.filter((u) => u.role === 'sup' && u.status === 'active')
+    : users.filter((u) => u.role === 'agent' && u.status === 'active')
+
+  const openAdd = () => {
+    setEditingId(null)
+    setForm({ ...defaultForm })
+    setModalOpen(true)
+  }
+
+  const openEdit = (kpi: KPIRecord) => {
+    setEditingId(kpi.id)
+    setForm({
+      name: kpi.name,
+      mode: kpi.mode,
+      assigneeType: kpi.assigneeType,
+      assigneeId: kpi.assigneeId,
+      period: kpi.period,
+      volumeValueMode: kpi.volumeValueMode ?? 'unit',
+      currencyType: kpi.currencyType ?? 'USD',
+      volumeProductFilter: kpi.volumeProductFilter ?? null,
+      volumeTarget: kpi.volumeTarget ?? 0,
+      pointMin: kpi.pointMin ?? 0,
+      pointGate: kpi.pointGate ?? 0,
+      pointOtb: kpi.pointOtb ?? 0,
+      pointOab: kpi.pointOab ?? 0,
+    })
+    setModalOpen(true)
+  }
+
+  const handleDelete = (id: number) => {
+    deleteKPI(id)
+    refresh()
+  }
 
   const handleSave = () => {
-    setSaving(true)
-    const updated = saveSettings({
-      currentScheme,
-      newScheme,
-      newSchemeEffectiveDate: effectiveDate,
-      kpiItems,
+    const payload = {
+      name: form.name,
+      mode: form.mode,
+      assigneeType: form.assigneeType,
+      assigneeId: form.assigneeId,
+      month,
+      period: form.period,
+      ...(form.mode === 'volume'
+        ? {
+            volumeValueMode: form.volumeValueMode,
+            currencyType: form.volumeValueMode === 'currency' ? form.currencyType : undefined,
+            volumeProductFilter: form.volumeProductFilter,
+            volumeTarget: form.volumeTarget,
+          }
+        : {
+            pointMin: form.pointMin,
+            pointGate: form.pointGate,
+            pointOtb: form.pointOtb,
+            pointOab: form.pointOab,
+          }),
+    } as Omit<KPIRecord, 'id' | 'createdAt'>
+    if (editingId !== null) {
+      updateKPI(editingId, payload)
+    } else {
+      addKPI(payload)
+    }
+    setModalOpen(false)
+    refresh()
+  }
+
+  const targetSummary = (kpi: KPIRecord) => {
+    if (kpi.mode === 'volume') {
+      const label = kpi.volumeValueMode === 'currency' ? (kpi.currencyType ?? 'USD') : 'units'
+      return `${kpi.volumeTarget ?? 0} ${label}`
+    }
+    return `${kpi.pointMin ?? 0}/${kpi.pointGate ?? 0}/${kpi.pointOtb ?? 0}/${kpi.pointOab ?? 0}`
+  }
+
+  // Rule handlers
+  const handleAddRule = () => {
+    if (!newRuleName.trim()) return
+    addServicePointRule({
+      serviceName: newRuleName.trim(),
+      rate: parseFloat(newRuleRate) || 0,
+      addOn: parseFloat(newRuleAddOn) || 0,
     })
-    setSettings(updated)
-    setSaving(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 3000)
+    setNewRuleName('')
+    setNewRuleRate('1')
+    setNewRuleAddOn('0')
+    refresh()
   }
 
-  const updateCurrentRow = (idx: number, field: keyof SIPPositionConfig, value: string | number) => {
-    setCurrentScheme((prev) => {
-      const next = prev.map((r) => ({ ...r }))
-      ;(next[idx] as Record<string, string | number>)[field] = value
-      return next
-    })
+  const handleDeleteRule = (id: number) => {
+    deleteServicePointRule(id)
+    refresh()
   }
 
-  const updateNewRow = (idx: number, field: keyof NewSIPPositionConfig, value: string | number) => {
-    setNewScheme((prev) => {
-      const next = prev.map((r) => ({ ...r }))
-      ;(next[idx] as Record<string, string | number>)[field] = value
-      return next
-    })
-  }
-
-  const updateKPIItem = (idx: number, field: keyof KPIItem, value: string | number) => {
-    setKpiItems((prev) => {
-      const next = prev.map((r) => ({ ...r }))
-      ;(next[idx] as Record<string, string | number>)[field] = value
-      return next
-    })
-  }
-
-  const addKPIItem = () => {
-    const newRole = selectedRole === 'all' ? 'agent' : selectedRole
-    const newBranch = selectedBranch === 'all' ? '' : selectedBranch
-    setKpiItems((prev) => [...prev, { name: '', weight: 0, gateTarget: 0, otbTarget: 0, oabTarget: 0, role: newRole, branch: newBranch }])
-  }
-
-  const removeKPIItem = (idx: number) => {
-    setKpiItems((prev) => prev.filter((_, i) => i !== idx))
-  }
-
-  if (!settings) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-slate-800" />
-      </div>
+  const handleRuleFieldChange = (id: number, field: 'rate' | 'addOn', value: string) => {
+    const updated = rules.map((r) =>
+      r.id === id ? { ...r, [field]: parseFloat(value) || 0 } : r
     )
+    setRules(updated)
   }
 
-  // Filtered KPI items based on selected branch and role
-  const filteredKpiIndices: number[] = kpiItems
-    .map((item, idx) => ({ item, idx }))
-    .filter(({ item }) => {
-      if (selectedBranch !== 'all' && item.branch !== selectedBranch) return false
-      if (selectedRole !== 'all' && item.role !== selectedRole) return false
-      return true
-    })
-    .map(({ idx }) => idx)
+  const handleSaveRules = () => {
+    saveServicePointRules(rules)
+    refresh()
+  }
+
+  const set = <K extends keyof KPIFormData>(key: K, val: KPIFormData[K]) =>
+    setForm((prev) => ({ ...prev, [key]: val }))
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">KPI Settings</h1>
-        <p className="text-gray-500 text-sm mt-1">Configure performance targets and SIP schemes for your shop</p>
-      </div>
-
-      {/* Current Scheme – Unit Based */}
-      <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
-        <div className="flex items-center gap-3 pb-4 border-b">
-          <div className="p-2 bg-amber-100 rounded-lg">
-            <Settings size={20} className="text-amber-600" />
-          </div>
-          <div>
-            <h2 className="font-semibold text-gray-900">Current Scheme – Unit Based</h2>
-            <p className="text-sm text-gray-500">SIP position settings for the unit-based incentive scheme</p>
-          </div>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <Settings size={24} /> KPI Settings
+          </h1>
+          <p className="text-gray-500 text-sm mt-1">Create and manage KPI targets for agents and shops</p>
         </div>
-
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 text-left text-gray-600">
-                <th className="px-3 py-2 font-medium">Position</th>
-                <th className="px-3 py-2 font-medium">Department</th>
-                <th className="px-3 py-2 font-medium">Grouping</th>
-                <th className="px-3 py-2 font-medium">Payout Method</th>
-                <th className="px-3 py-2 font-medium text-right">Gate ($)</th>
-                <th className="px-3 py-2 font-medium text-right">OTB ($)</th>
-                <th className="px-3 py-2 font-medium text-right">OAB ($)</th>
-                <th className="px-3 py-2 font-medium text-right">Annual Bonus (%)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {currentScheme.map((row, idx) => (
-                <tr key={idx} className="hover:bg-gray-50">
-                  <td className="px-3 py-2 whitespace-nowrap">{row.position}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">{row.department}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">{row.grouping}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">{row.payoutMethod}</td>
-                  <td className="px-3 py-2">
-                    <input type="number" min="0" step="0.01" value={row.gate} onChange={(e) => updateCurrentRow(idx, 'gate', parseFloat(e.target.value) || 0)} className="w-20 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-slate-300" />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input type="number" min="0" step="0.01" value={row.otb} onChange={(e) => updateCurrentRow(idx, 'otb', parseFloat(e.target.value) || 0)} className="w-20 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-slate-300" />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input type="number" min="0" step="0.01" value={row.oab} onChange={(e) => updateCurrentRow(idx, 'oab', parseFloat(e.target.value) || 0)} className="w-20 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-slate-300" />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input type="number" min="0" max="100" step="1" value={row.annualBonus} onChange={(e) => updateCurrentRow(idx, 'annualBonus', parseFloat(e.target.value) || 0)} className="w-20 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-slate-300" />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setMonth(shiftMonth(month, -1))}
+            className="p-2 rounded-lg border hover:bg-gray-50 transition-colors"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="border rounded-lg px-3 py-2 text-sm"
+          />
+          <button
+            onClick={() => setMonth(shiftMonth(month, 1))}
+            className="p-2 rounded-lg border hover:bg-gray-50 transition-colors"
+          >
+            <ChevronRight size={16} />
+          </button>
         </div>
       </div>
 
-      {/* KPI Items – Unit Based Targets (by Branch & Role) */}
+      {/* KPI List */}
       <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
-        <div className="flex items-center gap-3 pb-4 border-b">
-          <div className="p-2 bg-orange-100 rounded-lg">
-            <Settings size={20} className="text-orange-600" />
-          </div>
-          <div className="flex-1">
-            <h2 className="font-semibold text-gray-900">KPI Performance Items</h2>
-            <p className="text-sm text-gray-500">Set KPI targets per role and branch (Shop Performance = Agent + Sup)</p>
+        <div className="flex items-center justify-between pb-4 border-b">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-indigo-100 rounded-lg">
+              <Target size={20} className="text-indigo-600" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-gray-900">KPIs for {formatMonth(month)}</h2>
+              <p className="text-sm text-gray-500">{kpis.length} target{kpis.length !== 1 ? 's' : ''} configured</p>
+            </div>
           </div>
           <button
-            onClick={addKPIItem}
-            className="flex items-center gap-1 text-sm bg-orange-600 text-white px-3 py-1.5 rounded-lg hover:bg-orange-700 transition-colors"
+            onClick={openAdd}
+            className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-700 transition-colors text-sm"
           >
-            <Plus size={14} />
-            Add KPI
+            <Plus size={16} /> Add KPI
           </button>
         </div>
 
-        {/* Branch & Role Filters */}
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-600">Branch:</label>
-            <select
-              value={selectedBranch}
-              onChange={(e) => setSelectedBranch(e.target.value)}
-              className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
-            >
-              <option value="all">All Branches</option>
-              {branches.map((b) => (
-                <option key={b} value={b}>{b}</option>
-              ))}
-            </select>
+        {kpis.length === 0 ? (
+          <div className="text-center py-12 text-gray-400">
+            <Target size={40} className="mx-auto mb-3 opacity-40" />
+            <p>No KPIs configured for {formatMonth(month)}.</p>
+            <p className="text-sm mt-1">Click &quot;Add KPI&quot; to create one.</p>
           </div>
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-600">Role:</label>
-            <select
-              value={selectedRole}
-              onChange={(e) => setSelectedRole(e.target.value as 'agent' | 'sup' | 'all')}
-              className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
-            >
-              <option value="all">All Roles</option>
-              <option value="agent">Agent</option>
-              <option value="sup">Supervisor</option>
-            </select>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-left text-gray-600">
+                  <th className="px-3 py-2 font-medium">No.</th>
+                  <th className="px-3 py-2 font-medium">Name</th>
+                  <th className="px-3 py-2 font-medium">Mode</th>
+                  <th className="px-3 py-2 font-medium">Assignee Type</th>
+                  <th className="px-3 py-2 font-medium">Assigned To</th>
+                  <th className="px-3 py-2 font-medium">Period</th>
+                  <th className="px-3 py-2 font-medium">Target Summary</th>
+                  <th className="px-3 py-2 font-medium text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {kpis.map((kpi, idx) => (
+                  <tr key={kpi.id} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 text-gray-500">{idx + 1}</td>
+                    <td className="px-3 py-2 font-medium text-gray-900">{kpi.name}</td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${kpi.mode === 'volume' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                        {kpi.mode === 'volume' ? 'Volume' : 'Point'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${kpi.assigneeType === 'shop' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+                        {kpi.assigneeType === 'shop' ? 'Shop' : 'Agent'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-gray-700">{getUserName(kpi.assigneeId)}</td>
+                    <td className="px-3 py-2 text-gray-700 capitalize">{kpi.period}</td>
+                    <td className="px-3 py-2 text-gray-700 font-mono text-xs">
+                      {kpi.mode === 'point' && <span className="text-gray-400 mr-1">MIN/Gate/OTB/OAB: </span>}
+                      {targetSummary(kpi)}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <button onClick={() => openEdit(kpi)} className="text-gray-400 hover:text-indigo-600 p-1 transition-colors">
+                        <Pencil size={15} />
+                      </button>
+                      <button onClick={() => handleDelete(kpi.id)} className="text-gray-400 hover:text-red-600 p-1 ml-1 transition-colors">
+                        <Trash2 size={15} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
+        )}
+      </div>
+
+      {/* Service Point Rules */}
+      <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
+        <div className="flex items-center justify-between pb-4 border-b">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-green-100 rounded-lg">
+              <Settings size={20} className="text-green-600" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-gray-900">Service Point Rules</h2>
+              <p className="text-sm text-gray-500">Configure point rates for service types used in point-based KPIs</p>
+            </div>
+          </div>
+          <button
+            onClick={handleSaveRules}
+            className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-700 transition-colors text-sm"
+          >
+            Save Rules
+          </button>
         </div>
 
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
               <tr className="bg-gray-50 text-left text-gray-600">
-                <th className="px-3 py-2 font-medium">No.</th>
-                <th className="px-3 py-2 font-medium">KPI Name</th>
-                <th className="px-3 py-2 font-medium">Role</th>
-                <th className="px-3 py-2 font-medium">Branch</th>
-                <th className="px-3 py-2 font-medium text-right">Weight (%)</th>
-                <th className="px-3 py-2 font-medium text-right">Gate Target</th>
-                <th className="px-3 py-2 font-medium text-right">OTB Target</th>
-                <th className="px-3 py-2 font-medium text-right">OAB Target</th>
-                <th className="px-3 py-2 font-medium text-center">Action</th>
+                <th className="px-3 py-2 font-medium">Service Name</th>
+                <th className="px-3 py-2 font-medium text-right">Rate (multiplier)</th>
+                <th className="px-3 py-2 font-medium text-right">Add-on (flat bonus)</th>
+                <th className="px-3 py-2 font-medium text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y">
-              {filteredKpiIndices.map((idx, displayIdx) => {
-                const row = kpiItems[idx]
-                return (
-                <tr key={idx} className="hover:bg-gray-50">
-                  <td className="px-3 py-2 text-gray-500">{displayIdx + 1}</td>
+              {rules.map((rule) => (
+                <tr key={rule.id} className="hover:bg-gray-50">
+                  <td className="px-3 py-2 text-gray-900">{rule.serviceName}</td>
                   <td className="px-3 py-2">
-                    <input type="text" value={row.name} onChange={(e) => updateKPIItem(idx, 'name', e.target.value)} className="w-48 border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-orange-300" placeholder="KPI name" />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={rule.rate}
+                      onChange={(e) => handleRuleFieldChange(rule.id, 'rate', e.target.value)}
+                      className="w-24 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-300"
+                    />
                   </td>
                   <td className="px-3 py-2">
-                    <select value={row.role} onChange={(e) => updateKPIItem(idx, 'role', e.target.value)} className="border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300">
-                      <option value="agent">Agent</option>
-                      <option value="sup">Supervisor</option>
-                    </select>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={rule.addOn}
+                      onChange={(e) => handleRuleFieldChange(rule.id, 'addOn', e.target.value)}
+                      className="w-24 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-300"
+                    />
                   </td>
-                  <td className="px-3 py-2">
-                    <input type="text" value={row.branch} onChange={(e) => updateKPIItem(idx, 'branch', e.target.value)} className="w-28 border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-orange-300" placeholder="Branch" list="branch-list" />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input type="number" min="0" max="100" step="1" value={row.weight} onChange={(e) => updateKPIItem(idx, 'weight', parseFloat(e.target.value) || 0)} className="w-20 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-orange-300" />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input type="number" min="0" step="1" value={row.gateTarget} onChange={(e) => updateKPIItem(idx, 'gateTarget', parseFloat(e.target.value) || 0)} className="w-20 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-orange-300" />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input type="number" min="0" step="1" value={row.otbTarget} onChange={(e) => updateKPIItem(idx, 'otbTarget', parseFloat(e.target.value) || 0)} className="w-20 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-orange-300" />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input type="number" min="0" step="1" value={row.oabTarget} onChange={(e) => updateKPIItem(idx, 'oabTarget', parseFloat(e.target.value) || 0)} className="w-20 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-orange-300" />
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <button onClick={() => removeKPIItem(idx)} className="text-red-400 hover:text-red-600 transition-colors p-1" title="Remove KPI">
-                      <Trash2 size={14} />
+                  <td className="px-3 py-2 text-right">
+                    <button onClick={() => handleDeleteRule(rule.id)} className="text-gray-400 hover:text-red-600 p-1 transition-colors">
+                      <Trash2 size={15} />
                     </button>
                   </td>
                 </tr>
-                )
-              })}
+              ))}
+              {/* Add row */}
+              <tr className="bg-gray-50/50">
+                <td className="px-3 py-2">
+                  <input
+                    type="text"
+                    placeholder="Service name"
+                    value={newRuleName}
+                    onChange={(e) => setNewRuleName(e.target.value)}
+                    className="w-full border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-300 text-sm"
+                  />
+                </td>
+                <td className="px-3 py-2">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={newRuleRate}
+                    onChange={(e) => setNewRuleRate(e.target.value)}
+                    className="w-24 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-300"
+                  />
+                </td>
+                <td className="px-3 py-2">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={newRuleAddOn}
+                    onChange={(e) => setNewRuleAddOn(e.target.value)}
+                    className="w-24 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-300"
+                  />
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <button onClick={handleAddRule} className="text-green-600 hover:text-green-800 p-1 transition-colors" title="Add Rule">
+                    <Plus size={16} />
+                  </button>
+                </td>
+              </tr>
             </tbody>
-            {filteredKpiIndices.length > 0 && (
-              <tfoot>
-                <tr className="bg-gray-50 font-medium text-gray-700">
-                  <td className="px-3 py-2" colSpan={4}>Total Weight</td>
-                  <td className="px-3 py-2 text-right">{filteredKpiIndices.reduce((sum, idx) => sum + kpiItems[idx].weight, 0)}%</td>
-                  <td colSpan={4} />
-                </tr>
-              </tfoot>
-            )}
           </table>
-          <datalist id="branch-list">
-            {branches.map((b) => (
-              <option key={b} value={b} />
-            ))}
-          </datalist>
         </div>
-        <p className="text-xs text-gray-400">* Weights should sum to 100% per role per branch. Staff is only allowed two KPIs to fail out of total KPIs (Mandatory).</p>
       </div>
 
-      {/* New Scheme – Point Based */}
-      <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
-        <div className="flex items-center gap-3 pb-4 border-b">
-          <div className="p-2 bg-green-100 rounded-lg">
-            <Settings size={20} className="text-green-600" />
+      {/* Add/Edit KPI Modal */}
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editingId !== null ? 'Edit KPI' : 'Add KPI'}>
+        <div className="space-y-6">
+          {/* Step 1 — Mode Selection */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Step 1 — Mode</label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => set('mode', 'volume')}
+                className={`p-4 border-2 rounded-xl text-left transition-colors ${form.mode === 'volume' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}
+              >
+                <p className="font-semibold text-gray-900">Volume-based</p>
+                <p className="text-xs text-gray-500 mt-1">Track quantity or revenue against a single target</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => set('mode', 'point')}
+                className={`p-4 border-2 rounded-xl text-left transition-colors ${form.mode === 'point' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'}`}
+              >
+                <p className="font-semibold text-gray-900">Point-based</p>
+                <p className="text-xs text-gray-500 mt-1">Multi-tier point targets (MIN / Gate / OTB / OAB)</p>
+              </button>
+            </div>
           </div>
-          <div className="flex-1">
-            <h2 className="font-semibold text-gray-900">New Scheme – Point Based</h2>
-            <p className="text-sm text-gray-500">SIP position settings for the point-based incentive scheme</p>
+
+          {/* Step 2 — Assignee */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Step 2 — Assignee</label>
+            <div className="flex gap-2 mb-3">
+              {(['shop', 'agent'] as KPIAssigneeType[]).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => { set('assigneeType', t); set('assigneeId', 0) }}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${form.assigneeType === t ? 'bg-slate-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                >
+                  {t === 'shop' ? 'Shop' : 'Agent'}
+                </button>
+              ))}
+            </div>
+            <select
+              value={form.assigneeId}
+              onChange={(e) => set('assigneeId', parseInt(e.target.value) || 0)}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+            >
+              <option value={0}>Select {form.assigneeType === 'shop' ? 'supervisor' : 'agent'}...</option>
+              {assigneeCandidates.map((u) => (
+                <option key={u.id} value={u.id}>{u.fullName} ({u.username})</option>
+              ))}
+            </select>
           </div>
-          <div className="flex items-center gap-2 text-sm">
-            <Calendar size={16} className="text-gray-400" />
-            <label className="text-gray-600 font-medium">Effective Date:</label>
+
+          {/* Step 3 — Target */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Step 3 — Target</label>
+            {form.mode === 'volume' ? (
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  {(['unit', 'currency'] as VolumeValueMode[]).map((vm) => (
+                    <button
+                      key={vm}
+                      type="button"
+                      onClick={() => set('volumeValueMode', vm)}
+                      className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${form.volumeValueMode === vm ? 'bg-slate-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                    >
+                      {vm === 'unit' ? 'Unit' : 'Currency'}
+                    </button>
+                  ))}
+                </div>
+                {form.volumeValueMode === 'currency' && (
+                  <select
+                    value={form.currencyType}
+                    onChange={(e) => set('currencyType', e.target.value as CurrencyType)}
+                    className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  >
+                    <option value="USD">USD</option>
+                    <option value="KHR">KHR</option>
+                  </select>
+                )}
+                <select
+                  value={form.volumeProductFilter ?? ''}
+                  onChange={(e) => set('volumeProductFilter', e.target.value || null)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
+                  <option value="">All products</option>
+                  {PRODUCT_OPTIONS.map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Target</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.volumeTarget}
+                    onChange={(e) => set('volumeTarget', parseFloat(e.target.value) || 0)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                {([
+                  ['pointMin', 'MIN — Minimum threshold'],
+                  ['pointGate', 'Gate — Main benchmark'],
+                  ['pointOtb', 'OTB — On-target bonus'],
+                  ['pointOab', 'OAB — Over-achievement bonus'],
+                ] as [keyof KPIFormData, string][]).map(([key, label]) => (
+                  <div key={key}>
+                    <label className="block text-xs text-gray-500 mb-1">{label}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form[key] as number}
+                      onChange={(e) => set(key, parseFloat(e.target.value) || 0)}
+                      className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Step 4 — Period */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Step 4 — Period</label>
+            <select
+              value={form.period}
+              onChange={(e) => set('period', e.target.value as KPIPeriod)}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+            >
+              <option value="monthly">Monthly</option>
+              <option value="weekly">Weekly</option>
+              <option value="daily">Daily</option>
+            </select>
+          </div>
+
+          {/* KPI Name */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">KPI Name</label>
             <input
-              type="date"
-              value={effectiveDate}
-              onChange={(e) => setEffectiveDate(e.target.value)}
-              className="border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-300"
+              type="text"
+              value={form.name}
+              onChange={(e) => set('name', e.target.value)}
+              placeholder="e.g. Agent Monthly Volume Target"
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
             />
           </div>
-        </div>
 
-        {/* Incentive Payment Range */}
-        <div>
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">Incentive Payment Range</h3>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 text-left text-gray-600">
-                  <th className="px-3 py-2 font-medium">Position</th>
-                  <th className="px-3 py-2 font-medium">Department</th>
-                  <th className="px-3 py-2 font-medium">Grouping</th>
-                  <th className="px-3 py-2 font-medium">Payout Method</th>
-                  <th className="px-3 py-2 font-medium text-right bg-yellow-50">Min ($)</th>
-                  <th className="px-3 py-2 font-medium text-right">Gate ($)</th>
-                  <th className="px-3 py-2 font-medium text-right">OTB ($)</th>
-                  <th className="px-3 py-2 font-medium text-right">OAB ($)</th>
-                  <th className="px-3 py-2 font-medium text-right">Annual Bonus (%)</th>
-                  <th className="px-3 py-2 font-medium text-right">PA Allowance ($)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {newScheme.map((row, idx) => (
-                  <tr key={idx} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 whitespace-nowrap">{row.position}</td>
-                    <td className="px-3 py-2 whitespace-nowrap">{row.department}</td>
-                    <td className="px-3 py-2 whitespace-nowrap">{row.grouping}</td>
-                    <td className="px-3 py-2 whitespace-nowrap">{row.payoutMethod}</td>
-                    <td className="px-3 py-2 bg-yellow-50">
-                      <input type="number" min="0" step="0.01" value={row.min} onChange={(e) => updateNewRow(idx, 'min', parseFloat(e.target.value) || 0)} className="w-20 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-yellow-300" />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input type="number" min="0" step="0.01" value={row.gate} onChange={(e) => updateNewRow(idx, 'gate', parseFloat(e.target.value) || 0)} className="w-20 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-300" />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input type="number" min="0" step="0.01" value={row.otb} onChange={(e) => updateNewRow(idx, 'otb', parseFloat(e.target.value) || 0)} className="w-20 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-300" />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input type="number" min="0" step="0.01" value={row.oab} onChange={(e) => updateNewRow(idx, 'oab', parseFloat(e.target.value) || 0)} className="w-20 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-300" />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input type="number" min="0" max="100" step="1" value={row.annualBonus} onChange={(e) => updateNewRow(idx, 'annualBonus', parseFloat(e.target.value) || 0)} className="w-20 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-300" />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input type="number" min="0" step="0.01" value={row.paAllowance} onChange={(e) => updateNewRow(idx, 'paAllowance', parseFloat(e.target.value) || 0)} className="w-20 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-300" />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {/* Month (read-only) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Month</label>
+            <input
+              type="month"
+              value={month}
+              readOnly
+              className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500"
+            />
           </div>
-          <p className="text-xs text-gray-400 mt-2">* 25% bonus to be added to monthly in separate proposal. Min = 75%–85% (based on Mgt Approval).</p>
-        </div>
 
-        {/* Point Targets */}
-        <div>
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">Point Targets</h3>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 text-left text-gray-600">
-                  <th className="px-3 py-2 font-medium">Position</th>
-                  <th className="px-3 py-2 font-medium text-right bg-yellow-50">Min (pts)</th>
-                  <th className="px-3 py-2 font-medium text-right">Gate (pts)</th>
-                  <th className="px-3 py-2 font-medium text-right">OTB (pts)</th>
-                  <th className="px-3 py-2 font-medium text-right">OAB (pts)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {newScheme.map((row, idx) => (
-                  <tr key={idx} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 whitespace-nowrap">{row.position}</td>
-                    <td className="px-3 py-2 bg-yellow-50">
-                      <input type="number" min="0" step="1" value={row.minPoints} onChange={(e) => updateNewRow(idx, 'minPoints', parseFloat(e.target.value) || 0)} className="w-24 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-yellow-300" />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input type="number" min="0" step="1" value={row.gatePoints} onChange={(e) => updateNewRow(idx, 'gatePoints', parseFloat(e.target.value) || 0)} className="w-24 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-300" />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input type="number" min="0" step="1" value={row.otbPoints} onChange={(e) => updateNewRow(idx, 'otbPoints', parseFloat(e.target.value) || 0)} className="w-24 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-300" />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input type="number" min="0" step="1" value={row.oabPoints} onChange={(e) => updateNewRow(idx, 'oabPoints', parseFloat(e.target.value) || 0)} className="w-24 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-300" />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {/* Actions */}
+          <div className="flex justify-end gap-3 pt-2 border-t">
+            <button
+              type="button"
+              onClick={() => setModalOpen(false)}
+              className="px-4 py-2 rounded-lg border text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={!form.name.trim() || form.assigneeId === 0}
+              className="px-4 py-2 rounded-lg bg-slate-800 text-white text-sm hover:bg-slate-700 disabled:opacity-50 transition-colors"
+            >
+              {editingId !== null ? 'Update KPI' : 'Create KPI'}
+            </button>
           </div>
         </div>
-      </div>
-
-      {/* Save Button */}
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <div className="flex items-center justify-between">
-          {saved && (
-            <span className="text-green-600 text-sm font-medium flex items-center gap-1">
-              ✓ Settings saved successfully
-            </span>
-          )}
-          {!saved && <span />}
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="flex items-center gap-2 bg-slate-800 text-white px-6 py-2 rounded-lg hover:bg-slate-700 disabled:opacity-50 transition-colors"
-          >
-            <Save size={16} />
-            {saving ? 'Saving...' : 'Save Settings'}
-          </button>
-        </div>
-      </div>
+      </Modal>
     </div>
   )
 }

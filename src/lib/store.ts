@@ -287,6 +287,8 @@ export interface Sale {
   date: string
   notes: string | null
   customer: { name: string } | null
+  /** Points calculated using service point rules (amount × rate + add-on) */
+  kpiPoints?: number | null
   createdBy: string
   createdAt: string
 }
@@ -315,58 +317,69 @@ export interface TopUp {
   createdAt: string
 }
 
-/** SIP position config for the Current (Unit-based) scheme */
-export interface SIPPositionConfig {
-  position: string
-  department: string
-  grouping: string
-  payoutMethod: string
-  gate: number
-  otb: number
-  oab: number
-  annualBonus: number
-}
+/** KPI mode: volume measures raw output, point measures a points score */
+export type KPIMode = 'volume' | 'point'
 
-/** SIP position config for the New (Point-based) scheme */
-export interface NewSIPPositionConfig {
-  position: string
-  department: string
-  grouping: string
-  payoutMethod: string
-  min: number
-  gate: number
-  otb: number
-  oab: number
-  annualBonus: number
-  paAllowance: number
-  /** Point target thresholds */
-  minPoints: number
-  gatePoints: number
-  otbPoints: number
-  oabPoints: number
-}
+/** For volume KPIs: whether to count units or sum currency */
+export type VolumeValueMode = 'unit' | 'currency'
 
-/** Individual KPI definition for the unit-based scheme */
-export interface KPIItem {
-  name: string
-  /** Weight percentage (all items should sum to 100) */
-  weight: number
-  gateTarget: number
-  otbTarget: number
-  oabTarget: number
-  /** Role this KPI applies to */
-  role: 'agent' | 'sup'
-  /** Branch this KPI belongs to */
-  branch: string
-}
+/** Currency type for volume/currency KPIs */
+export type CurrencyType = 'USD' | 'KHR'
 
-export interface KPISettings {
+/** KPI period */
+export type KPIPeriod = 'monthly' | 'weekly' | 'daily'
+
+/** Assignee type: shop means track whole branch, agent means individual */
+export type KPIAssigneeType = 'shop' | 'agent'
+
+/** Service point rule: defines rate and add-on for a service type used in point-based KPIs */
+export interface ServicePointRule {
   id: number
-  currentScheme: SIPPositionConfig[]
-  newScheme: NewSIPPositionConfig[]
-  newSchemeEffectiveDate: string
-  /** Individual KPI items for the unit-based scheme */
-  kpiItems: KPIItem[]
+  /** The service type name (e.g., "Home Internet Activation") */
+  serviceName: string
+  /** Multiplier applied to the transaction dollar amount */
+  rate: number
+  /** Flat bonus points added regardless of amount */
+  addOn: number
+}
+
+/** A single KPI record */
+export interface KPIRecord {
+  id: number
+  /** Display name for this KPI */
+  name: string
+  /** Volume or Point mode */
+  mode: KPIMode
+  /** Whether this KPI is assigned to a shop (supervisor) or individual agent */
+  assigneeType: KPIAssigneeType
+  /** The user ID of the assignee (supervisor for shop KPIs, agent for agent KPIs) */
+  assigneeId: number
+  /** The month this KPI applies to, format: YYYY-MM */
+  month: string
+  /** Measurement period granularity */
+  period: KPIPeriod
+
+  // --- Volume-specific fields ---
+  /** For volume KPIs: unit or currency value mode */
+  volumeValueMode?: VolumeValueMode
+  /** For volume/currency KPIs: USD or KHR */
+  currencyType?: CurrencyType
+  /** For volume KPIs: optional specific product to track (null = all products) */
+  volumeProductFilter?: string | null
+  /** For volume KPIs: the single target number */
+  volumeTarget?: number
+
+  // --- Point-specific fields ---
+  /** For point KPIs: MIN threshold */
+  pointMin?: number
+  /** For point KPIs: Gate threshold (main benchmark) */
+  pointGate?: number
+  /** For point KPIs: OTB threshold */
+  pointOtb?: number
+  /** For point KPIs: OAB threshold */
+  pointOab?: number
+
+  createdAt: string
 }
 
 export interface WeeklyData {
@@ -390,7 +403,6 @@ export interface MonthlyData {
 const CUSTOMERS_KEY = 'pd_customers'
 const SALES_KEY = 'pd_sales'
 const TOPUPS_KEY = 'pd_topups'
-const SETTINGS_KEY = 'pd_settings'
 
 function readRawCustomers(): RawCustomer[] {
   return readKey<RawCustomer[]>(CUSTOMERS_KEY, [])
@@ -517,6 +529,7 @@ export function addSale(data: {
   unitPrice?: number | null
   totalAmount: number
   pointsEarned?: number | null
+  kpiPoints?: number | null
   date?: string
   notes?: string | null
   createdBy?: string
@@ -534,6 +547,7 @@ export function addSale(data: {
     unitPrice: data.unitPrice ?? null,
     totalAmount: data.totalAmount,
     pointsEarned: data.pointsEarned ?? null,
+    kpiPoints: data.kpiPoints ?? null,
     date: data.date ? new Date(data.date).toISOString() : now,
     notes: data.notes ?? null,
     customer: data.customerId
@@ -568,6 +582,7 @@ export function updateSale(
     unitPrice?: number | null
     totalAmount?: number
     pointsEarned?: number | null
+    kpiPoints?: number | null
     date?: string
     notes?: string | null
     createdBy?: string
@@ -584,6 +599,7 @@ export function updateSale(
   if (data.unitPrice !== undefined) update.unitPrice = data.unitPrice
   if (data.totalAmount !== undefined) update.totalAmount = data.totalAmount
   if (data.pointsEarned !== undefined) update.pointsEarned = data.pointsEarned
+  if (data.kpiPoints !== undefined) update.kpiPoints = data.kpiPoints
   if (data.date !== undefined) update.date = new Date(data.date).toISOString()
   if (data.notes !== undefined) update.notes = data.notes
   if (data.createdBy !== undefined) update.createdBy = data.createdBy
@@ -676,79 +692,199 @@ export function deleteTopup(id: number): void {
 }
 
 // ---------------------------------------------------------------------------
-// KPI Settings
+// KPI Records CRUD
 // ---------------------------------------------------------------------------
 
-const DEFAULT_CURRENT_SCHEME: SIPPositionConfig[] = [
-  { position: 'Assistant Smart Shop Supervisor', department: 'B2C Management', grouping: 'Store Supervisor', payoutMethod: 'Monthly', gate: 75, otb: 150, oab: 200, annualBonus: 25 },
-  { position: 'Smart Shop Supervisor', department: 'B2C Management', grouping: 'Store Supervisor', payoutMethod: 'Monthly', gate: 75, otb: 150, oab: 200, annualBonus: 25 },
-  { position: 'Front Office Agent', department: 'B2C Management', grouping: 'Frontline', payoutMethod: 'Monthly', gate: 50, otb: 75, oab: 100, annualBonus: 25 },
-  { position: 'Front Office Agent Intern', department: 'B2C Management', grouping: 'Frontline', payoutMethod: 'Monthly', gate: 50, otb: 75, oab: 100, annualBonus: 0 },
+const KPIS_KEY = 'pd_kpis'
+const SERVICE_POINT_RULES_KEY = 'pd_service_point_rules'
+
+const DEFAULT_SERVICE_POINT_RULES: ServicePointRule[] = [
+  { id: 1, serviceName: 'Gross Add', rate: 1, addOn: 0 },
+  { id: 2, serviceName: 'Change SIM', rate: 1, addOn: 0 },
+  { id: 3, serviceName: 'Pre-Paid sub Recharge', rate: 1, addOn: 0 },
+  { id: 4, serviceName: 'SC Selling', rate: 1, addOn: 0 },
+  { id: 5, serviceName: 'Home Internet Gross Add', rate: 2, addOn: 0 },
+  { id: 6, serviceName: 'FWBB Deposit / FTTx Signup', rate: 2, addOn: 0 },
+  { id: 7, serviceName: 'Home Internet Migration', rate: 2, addOn: 0 },
+  { id: 8, serviceName: 'Home Internet Recharge', rate: 2, addOn: 0 },
+  { id: 9, serviceName: 'SME New Sub Gross Add', rate: 2, addOn: 0 },
+  { id: 10, serviceName: 'SME Existing Recharge', rate: 2, addOn: 0 },
+  { id: 11, serviceName: 'ICT Solution', rate: 2, addOn: 0 },
+  { id: 12, serviceName: 'Device Handset/Accessory', rate: 0.5, addOn: 0 },
+  { id: 13, serviceName: 'eSIM', rate: 0, addOn: 2 },
+  { id: 14, serviceName: 'Smart NAS Download', rate: 0, addOn: 2 },
 ]
 
-const DEFAULT_NEW_SCHEME: NewSIPPositionConfig[] = [
-  { position: 'Assistant Smart Shop Supervisor', department: 'B2C Management', grouping: 'Store Supervisor', payoutMethod: 'Monthly', min: 40, gate: 75, otb: 150, oab: 200, annualBonus: 0, paAllowance: 0, minPoints: 5600, gatePoints: 7000, otbPoints: 7500, oabPoints: 8000 },
-  { position: 'Smart Shop Supervisor', department: 'B2C Management', grouping: 'Store Supervisor', payoutMethod: 'Monthly', min: 40, gate: 75, otb: 150, oab: 200, annualBonus: 0, paAllowance: 0, minPoints: 5600, gatePoints: 7000, otbPoints: 7500, oabPoints: 8000 },
-  { position: 'Front Office Agent', department: 'B2C Management', grouping: 'Frontline', payoutMethod: 'Monthly', min: 25, gate: 50, otb: 75, oab: 100, annualBonus: 0, paAllowance: 0, minPoints: 800, gatePoints: 1000, otbPoints: 1100, oabPoints: 1300 },
-  { position: 'Front Office Agent Intern', department: 'B2C Management', grouping: 'Frontline', payoutMethod: 'Monthly', min: 25, gate: 50, otb: 75, oab: 100, annualBonus: 0, paAllowance: 0, minPoints: 800, gatePoints: 1000, otbPoints: 1100, oabPoints: 1300 },
-]
-
-const DEFAULT_KPI_ITEMS: KPIItem[] = [
-  { name: 'Gross Adds', weight: 30, gateTarget: 50, otbTarget: 65, oabTarget: 90, role: 'agent', branch: '' },
-  { name: 'Recharge', weight: 20, gateTarget: 500, otbTarget: 700, oabTarget: 800, role: 'agent', branch: '' },
-  { name: 'Smart@Home & Fiber+', weight: 25, gateTarget: 10, otbTarget: 15, oabTarget: 20, role: 'agent', branch: '' },
-  { name: 'Smart Nas Downloading/MAU', weight: 25, gateTarget: 20, otbTarget: 30, oabTarget: 40, role: 'agent', branch: '' },
-  { name: 'Gross Adds', weight: 30, gateTarget: 100, otbTarget: 130, oabTarget: 180, role: 'sup', branch: '' },
-  { name: 'Recharge', weight: 20, gateTarget: 1000, otbTarget: 1400, oabTarget: 1600, role: 'sup', branch: '' },
-  { name: 'Smart@Home & Fiber+', weight: 25, gateTarget: 20, otbTarget: 30, oabTarget: 40, role: 'sup', branch: '' },
-  { name: 'Smart Nas Downloading/MAU', weight: 25, gateTarget: 40, otbTarget: 60, oabTarget: 80, role: 'sup', branch: '' },
-]
-
-const DEFAULT_SETTINGS: KPISettings = {
-  id: 1,
-  currentScheme: DEFAULT_CURRENT_SCHEME,
-  newScheme: DEFAULT_NEW_SCHEME,
-  newSchemeEffectiveDate: '2026-04-01',
-  kpiItems: DEFAULT_KPI_ITEMS,
+export function getKPIs(filters?: { month?: string; assigneeId?: number; mode?: KPIMode }): KPIRecord[] {
+  const kpis = readKey<KPIRecord[]>(KPIS_KEY, [])
+  if (!filters) return kpis
+  return kpis.filter((k) => {
+    if (filters.month && k.month !== filters.month) return false
+    if (filters.assigneeId !== undefined && k.assigneeId !== filters.assigneeId) return false
+    if (filters.mode && k.mode !== filters.mode) return false
+    return true
+  })
 }
 
-export function getSettings(): KPISettings {
-  const stored = readKey<KPISettings>(SETTINGS_KEY, DEFAULT_SETTINGS)
-  // Ensure backward compatibility – add scheme fields if missing
-  if (!stored.currentScheme) stored.currentScheme = DEFAULT_CURRENT_SCHEME
-  if (!stored.newScheme) stored.newScheme = DEFAULT_NEW_SCHEME
-  if (!stored.newSchemeEffectiveDate) stored.newSchemeEffectiveDate = '2026-04-01'
-  if (!stored.kpiItems) stored.kpiItems = DEFAULT_KPI_ITEMS
-  // Ensure KPI items have role and branch fields
-  stored.kpiItems = stored.kpiItems.map((item) => ({
-    ...item,
-    role: (item as Partial<KPIItem>).role ?? 'agent',
-    branch: (item as Partial<KPIItem>).branch ?? '',
-  }))
-  // Ensure new scheme rows have point target fields
-  stored.newScheme = stored.newScheme.map((row) => {
-    const withDefaults: NewSIPPositionConfig = {
-      ...row,
-      min: (row as Partial<NewSIPPositionConfig>).min ?? 0,
-      minPoints: (row as Partial<NewSIPPositionConfig>).minPoints ?? 0,
-      gatePoints: (row as Partial<NewSIPPositionConfig>).gatePoints ?? 0,
-      otbPoints: (row as Partial<NewSIPPositionConfig>).otbPoints ?? 0,
-      oabPoints: (row as Partial<NewSIPPositionConfig>).oabPoints ?? 0,
-    }
-    return withDefaults
-  })
+export function addKPI(data: Omit<KPIRecord, 'id' | 'createdAt'>): KPIRecord {
+  const kpis = readKey<KPIRecord[]>(KPIS_KEY, [])
+  const newKPI: KPIRecord = {
+    ...data,
+    id: nextId(kpis),
+    createdAt: new Date().toISOString(),
+  }
+  kpis.push(newKPI)
+  writeKey(KPIS_KEY, kpis)
+  return newKPI
+}
+
+export function updateKPI(id: number, data: Partial<Omit<KPIRecord, 'id' | 'createdAt'>>): KPIRecord {
+  const kpis = readKey<KPIRecord[]>(KPIS_KEY, [])
+  const idx = kpis.findIndex((k) => k.id === id)
+  if (idx === -1) throw new Error('KPI not found')
+  kpis[idx] = { ...kpis[idx], ...data }
+  writeKey(KPIS_KEY, kpis)
+  return kpis[idx]
+}
+
+export function deleteKPI(id: number): void {
+  const kpis = readKey<KPIRecord[]>(KPIS_KEY, [])
+  writeKey(
+    KPIS_KEY,
+    kpis.filter((k) => k.id !== id)
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Service Point Rules CRUD
+// ---------------------------------------------------------------------------
+
+export function getServicePointRules(): ServicePointRule[] {
+  const stored = readKey<ServicePointRule[] | null>(SERVICE_POINT_RULES_KEY, null)
+  if (stored === null) {
+    writeKey(SERVICE_POINT_RULES_KEY, DEFAULT_SERVICE_POINT_RULES)
+    return DEFAULT_SERVICE_POINT_RULES
+  }
   return stored
 }
 
-export function saveSettings(data: {
-  currentScheme: SIPPositionConfig[]
-  newScheme: NewSIPPositionConfig[]
-  newSchemeEffectiveDate: string
-  kpiItems: KPIItem[]
-}): KPISettings {
-  const settings: KPISettings = { id: 1, ...data }
-  writeKey(SETTINGS_KEY, settings)
-  return settings
+export function saveServicePointRules(rules: ServicePointRule[]): void {
+  writeKey(SERVICE_POINT_RULES_KEY, rules)
+}
+
+export function addServicePointRule(data: Omit<ServicePointRule, 'id'>): ServicePointRule {
+  const rules = getServicePointRules()
+  const newRule: ServicePointRule = {
+    ...data,
+    id: nextId(rules),
+  }
+  rules.push(newRule)
+  writeKey(SERVICE_POINT_RULES_KEY, rules)
+  return newRule
+}
+
+export function deleteServicePointRule(id: number): void {
+  const rules = getServicePointRules()
+  writeKey(
+    SERVICE_POINT_RULES_KEY,
+    rules.filter((r) => r.id !== id)
+  )
+}
+
+// ---------------------------------------------------------------------------
+// KPI Performance Computation
+// ---------------------------------------------------------------------------
+
+/** Calculate actual achievement for a KPI given a set of sales */
+export function computeKPIAchievement(
+  kpi: KPIRecord,
+  sales: Sale[],
+  allUsers: AppUser[]
+): {
+  actual: number
+  target: number
+  achievementPct: number
+  tier: 'oab' | 'otb' | 'gate' | 'min' | 'below'
+} {
+  // 1. Filter sales to the KPI's month (YYYY-MM)
+  const monthSales = sales.filter((s) => {
+    const d = new Date(s.date)
+    const saleMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    return saleMonth === kpi.month
+  })
+
+  // 2. Scope to the right person/shop
+  let scopedSales: Sale[]
+  if (kpi.assigneeType === 'agent') {
+    const assignee = allUsers.find((u) => u.id === kpi.assigneeId)
+    scopedSales = assignee
+      ? monthSales.filter((s) => s.createdBy === assignee.fullName)
+      : []
+  } else {
+    // Shop KPI: find the supervisor (assignee), get their branch, include all users in that branch
+    const supervisor = allUsers.find((u) => u.id === kpi.assigneeId)
+    if (supervisor && supervisor.branch) {
+      const branchUsers = allUsers.filter((u) => u.branch === supervisor.branch)
+      const branchNames = new Set(branchUsers.map((u) => u.fullName))
+      scopedSales = monthSales.filter((s) => branchNames.has(s.createdBy))
+    } else {
+      scopedSales = []
+    }
+  }
+
+  // 3. Sum actual based on mode
+  let actual = 0
+  if (kpi.mode === 'point') {
+    for (const s of scopedSales) {
+      if (s.type === 'point') {
+        // Prefer kpiPoints (computed via ServicePointRule: amount × rate + addOn).
+        // Fall back to pointsEarned for legacy sales created before kpiPoints was introduced.
+        actual += s.kpiPoints ?? s.pointsEarned ?? 0
+      }
+    }
+  } else {
+    // Volume mode
+    let filtered = scopedSales.filter((s) => s.type === 'unit')
+    if (kpi.volumeProductFilter) {
+      filtered = filtered.filter((s) => s.serviceName === kpi.volumeProductFilter)
+    }
+    if (kpi.volumeValueMode === 'currency') {
+      for (const s of filtered) actual += s.totalAmount
+    } else {
+      // unit mode (default)
+      for (const s of filtered) actual += s.quantity ?? 0
+    }
+  }
+
+  // 4. Calculate achievement % (gate target)
+  let target: number
+  if (kpi.mode === 'point') {
+    target = kpi.pointGate ?? 0
+  } else {
+    target = kpi.volumeTarget ?? 0
+  }
+  const achievementPct = target > 0 ? (actual / target) * 100 : 0
+
+  // 5. Determine tier
+  let tier: 'oab' | 'otb' | 'gate' | 'min' | 'below'
+  if (kpi.mode === 'point') {
+    if (kpi.pointOab !== undefined && actual >= kpi.pointOab) {
+      tier = 'oab'
+    } else if (kpi.pointOtb !== undefined && actual >= kpi.pointOtb) {
+      tier = 'otb'
+    } else if (kpi.pointGate !== undefined && actual >= kpi.pointGate) {
+      tier = 'gate'
+    } else if (kpi.pointMin !== undefined && actual >= kpi.pointMin) {
+      tier = 'min'
+    } else {
+      tier = 'below'
+    }
+  } else {
+    // Volume: only 'gate' or 'below'
+    tier = target > 0 && actual >= target ? 'gate' : 'below'
+  }
+
+  return { actual, target, achievementPct, tier }
 }
 
 // ---------------------------------------------------------------------------

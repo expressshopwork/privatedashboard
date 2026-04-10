@@ -15,6 +15,8 @@ import {
   DOLLAR_GROUP_ITEMS,
   POINT_BASED_ITEMS,
   getPointCategories,
+  getServicePointRules,
+  type ServicePointRule,
 } from '@/lib/store'
 
 const todayStr = () => new Date().toISOString().split('T')[0]
@@ -38,6 +40,9 @@ export default function SalesPage() {
   const [formNotes, setFormNotes] = useState('')
   const [formPhone, setFormPhone] = useState('')
 
+  // Service point rules
+  const [servicePointRules, setServicePointRules] = useState<ServicePointRule[]>([])
+
   // Edit modal state
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editingSale, setEditingSale] = useState<Sale | null>(null)
@@ -45,6 +50,7 @@ export default function SalesPage() {
     quantity: '',
     totalAmount: '',
     pointsEarned: '',
+    kpiPoints: '',
     date: '',
     notes: '',
   })
@@ -85,6 +91,7 @@ export default function SalesPage() {
 
   useEffect(() => {
     fetchSales()
+    setServicePointRules(getServicePointRules())
   }, [fetchSales])
 
   useEffect(() => {
@@ -160,6 +167,10 @@ export default function SalesPage() {
           const qty = parseInt(pointValues[item.name]) || 0
           if (qty > 0) {
             const pts = computeItemPoints(item.name, qty)
+            const rule = servicePointRules.find((r) => r.serviceName === item.name)
+            const kpiPoints = rule
+              ? (qty * rule.rate) + (qty > 0 ? rule.addOn : 0)
+              : null
             addSale({
               type: 'point',
               serviceName: item.name,
@@ -167,6 +178,7 @@ export default function SalesPage() {
               quantity: qty,
               totalAmount: 0,
               pointsEarned: pts,
+              kpiPoints,
               date: formDate,
               notes: combinedNotes,
               createdBy: currentUser?.fullName ?? '',
@@ -194,6 +206,7 @@ export default function SalesPage() {
       quantity: String(sale.quantity ?? ''),
       totalAmount: String(sale.totalAmount ?? ''),
       pointsEarned: String(sale.pointsEarned ?? ''),
+      kpiPoints: String(sale.kpiPoints ?? ''),
       date: sale.date ? new Date(sale.date).toISOString().split('T')[0] : todayStr(),
       notes: sale.notes ?? '',
     })
@@ -214,6 +227,9 @@ export default function SalesPage() {
         pointsEarned: editingSale.type === 'point'
           ? parseInt(editForm.pointsEarned) || 0
           : editingSale.pointsEarned,
+        kpiPoints: editingSale.type === 'point'
+          ? parseFloat(editForm.kpiPoints) || 0
+          : undefined,
         date: editForm.date,
         notes: editForm.notes || null,
       })
@@ -493,12 +509,21 @@ export default function SalesPage() {
                           item.bonusPoints
                             ? `×${item.pointMultiplier ?? 0} +${item.bonusPoints} pts`
                             : `×${item.pointMultiplier ?? 0} pts`
+                        const rule = servicePointRules.find((r) => r.serviceName === item.name)
+                        const ruleLabel = rule
+                          ? rule.addOn
+                            ? `(rate: ×${rule.rate} + ${rule.addOn} pts)`
+                            : `(rate: ×${rule.rate})`
+                          : null
                         return (
                           <div key={item.name} className="flex items-center gap-3">
                             <div className="flex-1">
                               <span className="text-xs text-gray-600">
                                 {item.name}{' '}
                                 <span className="text-gray-400">({multiplierLabel})</span>
+                                {ruleLabel && (
+                                  <span className="text-blue-400 ml-1">{ruleLabel}</span>
+                                )}
                               </span>
                             </div>
                             <input
@@ -594,7 +619,7 @@ export default function SalesPage() {
             )}
 
             {editingSale.type === 'point' && (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
                   <input
@@ -613,6 +638,17 @@ export default function SalesPage() {
                     onChange={(e) => setEditForm({ ...editForm, pointsEarned: e.target.value })}
                     className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
                     min="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">KPI Points</label>
+                  <input
+                    type="number"
+                    value={editForm.kpiPoints}
+                    onChange={(e) => setEditForm({ ...editForm, kpiPoints: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                    min="0"
+                    step="0.01"
                   />
                 </div>
               </div>

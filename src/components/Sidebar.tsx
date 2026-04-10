@@ -10,7 +10,7 @@ const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/sales', label: 'Daily Sales', icon: ShoppingCart },
   { href: '/topup', label: 'Top Up', icon: Zap },
-  { href: '/sale-tracking', label: 'Sale Tracking', icon: Target },
+  { href: '/sale-tracking', label: 'Performance', icon: Target },
   { href: '/settings', label: 'KPI Settings', icon: Settings },
 ]
 
