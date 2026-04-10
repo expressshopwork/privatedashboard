@@ -14,7 +14,7 @@ import {
   Pie,
   Cell,
 } from 'recharts'
-import { ShoppingBag, DollarSign, Zap, TrendingUp, Star, RefreshCw } from 'lucide-react'
+import { ShoppingBag, DollarSign, Zap, TrendingUp, TrendingDown, Star, RefreshCw } from 'lucide-react'
 import { format, addMonths } from 'date-fns'
 import Modal from '@/components/Modal'
 import {
@@ -25,15 +25,38 @@ import {
   type TopUp,
   UNIT_GROUP_ITEMS,
   DOLLAR_GROUP_ITEMS,
-  POINT_BASED_ITEMS,
   TOPUP_PRODUCTS,
-  getPointCategories,
 } from '@/lib/store'
 
 type ViewMode = 'unit' | 'point'
 type ChartRange = 'weekly' | 'monthly'
 
 const PIE_COLORS = ['#3b82f6', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444']
+
+function calcGrowth(current: number, previous: number): number | null {
+  if (previous === 0 && current === 0) return null
+  if (previous === 0) return 100
+  return ((current - previous) / previous) * 100
+}
+
+function GrowthBadge({ current, previous, label }: { current: number; previous: number; label: string }) {
+  const pct = calcGrowth(current, previous)
+  if (pct === null) return null
+  const isUp = pct >= 0
+  const direction = isUp ? 'up' : 'down'
+  return (
+    <div className="flex items-center gap-1.5 text-xs">
+      <span className="text-gray-500">{label}:</span>
+      <span
+        className={`flex items-center gap-0.5 font-semibold ${isUp ? 'text-green-600' : 'text-red-600'}`}
+        aria-label={`${label}: ${isUp ? '+' : ''}${pct.toFixed(1)}% ${direction}`}
+      >
+        {isUp ? <TrendingUp size={12} aria-hidden="true" /> : <TrendingDown size={12} aria-hidden="true" />}
+        {isUp ? '+' : ''}{pct.toFixed(1)}%
+      </span>
+    </div>
+  )
+}
 
 function KPICard({
   title,
@@ -144,7 +167,6 @@ export default function DashboardPage() {
     return { label: 'Active', color: 'bg-green-100 text-green-700' }
   }
 
-  const pointCategories = getPointCategories()
   const unitSummary = data.unitSummaryToday
   const pointSummary = data.pointSummaryToday
 
@@ -409,81 +431,57 @@ export default function DashboardPage() {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          {/* Point Summary List */}
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-purple-500" />
-              Point Summary — Today
-            </h2>
-            <div className="space-y-4">
-              {pointCategories.map((cat) => {
-                const items = POINT_BASED_ITEMS.filter((i) => i.category === cat)
-                return (
-                  <div key={cat}>
-                    <h3 className="text-sm font-semibold text-gray-600 mb-2">{cat}</h3>
-                    <div className="space-y-2">
-                      {items.map((item) => {
-                        const entry = pointSummary.items[item.name] ?? { quantity: 0, points: 0 }
-                        const multiplierLabel =
-                          item.bonusPoints
-                            ? `×${item.pointMultiplier ?? 0} +${item.bonusPoints} pts`
-                            : `×${item.pointMultiplier ?? 0} pts`
-                        return (
-                          <div key={item.name} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                            <div className="flex-1">
-                              <span className="text-sm text-gray-700">{item.name}</span>
-                              <span className="text-xs text-gray-400 ml-2">({multiplierLabel})</span>
-                            </div>
-                            <div className="flex items-center gap-4">
-                              <span className="text-xs text-gray-500">{entry.quantity} qty</span>
-                              <span className="text-sm font-bold text-purple-700 w-16 text-right">{entry.points} pts</span>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })}
-              <div className="flex items-center justify-between p-3 bg-purple-50 rounded-lg border border-purple-200 mt-2">
-                <span className="text-sm font-semibold text-purple-800">Total Points</span>
-                <span className="text-sm font-bold text-purple-800">{pointSummary.totalPoints} pts</span>
-              </div>
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full bg-purple-500" />
+            Points by Category — Today
+          </h2>
+          {data.pointCategoryChart.every((c) => c.points === 0) ? (
+            <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
+              No point sales recorded today
             </div>
-          </div>
-
-          {/* Point Category Chart */}
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-purple-500" />
-              Points by Category — Today
-            </h2>
-            {data.pointCategoryChart.every((c) => c.points === 0) ? (
-              <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
-                No point sales recorded today
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={data.pointCategoryChart} layout="vertical" margin={{ left: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis type="number" tick={{ fontSize: 12 }} />
-                  <YAxis
-                    dataKey="category"
-                    type="category"
-                    tick={{ fontSize: 11 }}
-                    width={100}
-                  />
-                  <Tooltip />
-                  <Bar dataKey="points" name="Points" radius={[0, 4, 4, 0]}>
-                    {data.pointCategoryChart.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
+          ) : (
+            <div className="flex flex-col lg:flex-row items-center justify-center gap-8">
+              <ResponsiveContainer width="100%" height={320}>
+                <PieChart>
+                  <Pie
+                    data={data.pointCategoryChart.filter((c) => c.points > 0)}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={70}
+                    outerRadius={120}
+                    paddingAngle={4}
+                    dataKey="points"
+                    nameKey="category"
+                    label={({ x, y, category, percent }) => (
+                      <text
+                        x={x}
+                        y={y}
+                        fill="#374151"
+                        fontSize={12}
+                        fontWeight={600}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        stroke="#fff"
+                        strokeWidth={3}
+                        paintOrder="stroke"
+                      >
+                        {`${category} ${(percent * 100).toFixed(0)}%`}
+                      </text>
+                    )}
+                    labelLine={true}
+                  >
+                    {data.pointCategoryChart
+                      .filter((c) => c.points > 0)
+                      .map((_, index) => (
+                        <Cell key={`doughnut-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                      ))}
+                  </Pie>
+                  <Tooltip formatter={(value: number) => `${value} pts`} />
+                </PieChart>
               </ResponsiveContainer>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -514,6 +512,22 @@ export default function DashboardPage() {
               ))}
             </div>
           </div>
+          {/* Growth indicators */}
+          <div className="flex flex-wrap gap-4 mb-4 px-1">
+            {chartRange === 'weekly' ? (
+              <>
+                <GrowthBadge current={data.weeklyComparison.thisWeekUnits} previous={data.weeklyComparison.lastWeekUnits} label="Units vs last week" />
+                <GrowthBadge current={data.weeklyComparison.thisWeekPoints} previous={data.weeklyComparison.lastWeekPoints} label="Points vs last week" />
+                <GrowthBadge current={data.weeklyComparison.thisWeekRevenue} previous={data.weeklyComparison.lastWeekRevenue} label="Revenue vs last week" />
+              </>
+            ) : (
+              <>
+                <GrowthBadge current={data.monthlyComparison.thisMonthUnits} previous={data.monthlyComparison.lastMonthUnits} label="Units vs last month" />
+                <GrowthBadge current={data.monthlyComparison.thisMonthPoints} previous={data.monthlyComparison.lastMonthPoints} label="Points vs last month" />
+                <GrowthBadge current={data.monthlyComparison.thisMonthRevenue} previous={data.monthlyComparison.lastMonthRevenue} label="Revenue vs last month" />
+              </>
+            )}
+          </div>
           <ResponsiveContainer width="100%" height={280}>
             <BarChart
               data={chartRange === 'weekly' ? weeklyChartData : monthlyChartData}
@@ -536,6 +550,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2 mb-4">
             <Zap size={20} className="text-amber-500" />
             <h2 className="text-lg font-semibold text-gray-900">Expiring Soon</h2>
+            <span className="text-xs text-gray-400 ml-1">(next 7 days)</span>
           </div>
           {data.expiringTopups.length === 0 ? (
             <p className="text-gray-400 text-sm text-center py-8">No expiring top-ups</p>
@@ -583,6 +598,7 @@ export default function DashboardPage() {
                   <th className="pb-3 font-medium">Category</th>
                   <th className="pb-3 font-medium">Type</th>
                   <th className="pb-3 font-medium">Details</th>
+                  <th className="pb-3 font-medium">Agent</th>
                   <th className="pb-3 font-medium">Date</th>
                 </tr>
               </thead>
@@ -609,6 +625,7 @@ export default function DashboardPage() {
                           : `${sale.quantity ?? 0} units`
                         : `${sale.quantity ?? 0} qty → ${sale.pointsEarned ?? 0} pts`}
                     </td>
+                    <td className="py-3 text-gray-500">{sale.createdBy || '—'}</td>
                     <td className="py-3 text-gray-500">
                       {format(new Date(sale.date), 'MMM d, HH:mm')}
                     </td>

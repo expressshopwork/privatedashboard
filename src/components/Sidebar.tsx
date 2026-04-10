@@ -32,7 +32,7 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-64 flex flex-col" style={{ backgroundColor: '#2C9E47' }}>
+    <aside className="w-64 flex flex-col" style={{ backgroundColor: '#34914A' }}>
       <div className="p-6 border-b border-white/20">
         <h1 className="text-xl font-semibold text-white tracking-tight">Shop Dashboard</h1>
         <p className="text-white/70 text-sm mt-1 font-light">Performance Monitor</p>

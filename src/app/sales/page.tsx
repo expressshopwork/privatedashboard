@@ -8,6 +8,7 @@ import {
   getSales,
   addSale,
   deleteSale,
+  getCurrentUser,
   type Sale,
   UNIT_GROUP_ITEMS,
   DOLLAR_GROUP_ITEMS,
@@ -27,6 +28,7 @@ export default function SalesPage() {
   const [filterType, setFilterType] = useState('')
   const [filterFrom, setFilterFrom] = useState('')
   const [filterTo, setFilterTo] = useState('')
+  const currentUser = getCurrentUser()
 
   // Form state
   const [formMode, setFormMode] = useState<SaleMode>('unit')
@@ -110,6 +112,7 @@ export default function SalesPage() {
               totalAmount: 0,
               date: formDate,
               notes: formNotes || null,
+              createdBy: currentUser?.fullName ?? '',
             })
           }
         }
@@ -125,6 +128,7 @@ export default function SalesPage() {
               totalAmount: amt,
               date: formDate,
               notes: formNotes || null,
+              createdBy: currentUser?.fullName ?? '',
             })
           }
         }
@@ -143,6 +147,7 @@ export default function SalesPage() {
               pointsEarned: pts,
               date: formDate,
               notes: formNotes || null,
+              createdBy: currentUser?.fullName ?? '',
             })
           }
         }
