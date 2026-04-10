@@ -45,7 +45,7 @@ function KPICard({
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [viewMode, setViewMode] = useState<ViewMode>('unit')
+  const [viewMode, setViewMode] = useState<ViewMode>('point')
 
   useEffect(() => {
     try {

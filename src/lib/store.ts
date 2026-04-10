@@ -4,6 +4,130 @@
 
 const isBrowser = typeof window !== 'undefined'
 
+// ---------------------------------------------------------------------------
+// User management
+// ---------------------------------------------------------------------------
+
+export interface AppUser {
+  id: number
+  fullName: string
+  username: string
+  password: string
+  role: 'admin' | 'agent' | 'sup'
+  status: 'active' | 'inactive'
+  createdAt: string
+}
+
+const USERS_KEY = 'pd_users'
+const CURRENT_USER_KEY = 'pd_current_user'
+
+function getDefaultAdmin(): AppUser {
+  return {
+    id: 1,
+    fullName: 'Administrator',
+    username: 'admin',
+    password: 'admin123',
+    role: 'admin',
+    status: 'active',
+    createdAt: new Date().toISOString(),
+  }
+}
+
+export function getUsers(): AppUser[] {
+  const users = readKey<AppUser[]>(USERS_KEY, [])
+  if (users.length === 0) {
+    const admin = getDefaultAdmin()
+    writeKey(USERS_KEY, [admin])
+    return [admin]
+  }
+  return users
+}
+
+export function addUser(data: {
+  fullName: string
+  username: string
+  password: string
+  role: 'admin' | 'agent' | 'sup'
+  status: 'active' | 'inactive'
+}): AppUser {
+  const users = getUsers()
+  const exists = users.find(
+    (u) => u.username.toLowerCase() === data.username.toLowerCase()
+  )
+  if (exists) throw new Error('Username already exists')
+  const newUser: AppUser = {
+    id: nextId(users),
+    fullName: data.fullName,
+    username: data.username,
+    password: data.password,
+    role: data.role,
+    status: data.status,
+    createdAt: new Date().toISOString(),
+  }
+  users.push(newUser)
+  writeKey(USERS_KEY, users)
+  return newUser
+}
+
+export function updateUser(
+  id: number,
+  data: {
+    fullName: string
+    username: string
+    password?: string
+    role: 'admin' | 'agent' | 'sup'
+    status: 'active' | 'inactive'
+  }
+): AppUser {
+  const users = getUsers()
+  const idx = users.findIndex((u) => u.id === id)
+  if (idx === -1) throw new Error('User not found')
+  const duplicate = users.find(
+    (u) => u.id !== id && u.username.toLowerCase() === data.username.toLowerCase()
+  )
+  if (duplicate) throw new Error('Username already exists')
+  users[idx] = {
+    ...users[idx],
+    fullName: data.fullName,
+    username: data.username,
+    role: data.role,
+    status: data.status,
+    ...(data.password ? { password: data.password } : {}),
+  }
+  writeKey(USERS_KEY, users)
+  return users[idx]
+}
+
+export function deleteUser(id: number): void {
+  const users = getUsers()
+  writeKey(
+    USERS_KEY,
+    users.filter((u) => u.id !== id)
+  )
+}
+
+export function loginUser(username: string, password: string): AppUser | null {
+  const users = getUsers()
+  const user = users.find(
+    (u) =>
+      u.username.toLowerCase() === username.toLowerCase() &&
+      u.password === password &&
+      u.status === 'active'
+  )
+  if (!user) return null
+  const sessionUser = { ...user }
+  writeKey(CURRENT_USER_KEY, sessionUser)
+  return sessionUser
+}
+
+export function logoutUser(): void {
+  if (isBrowser) localStorage.removeItem(CURRENT_USER_KEY)
+}
+
+export function getCurrentUser(): AppUser | null {
+  return readKey<AppUser | null>(CURRENT_USER_KEY, null)
+}
+
 function readKey<T>(key: string, fallback: T): T {
   if (!isBrowser) return fallback
   try {
