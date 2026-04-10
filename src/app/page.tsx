@@ -1,19 +1,39 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import { ShoppingBag, DollarSign, Zap, TrendingUp, Star } from 'lucide-react'
-import { format } from 'date-fns'
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+} from 'recharts'
+import { ShoppingBag, DollarSign, Zap, TrendingUp, Star, RefreshCw } from 'lucide-react'
+import { format, addMonths } from 'date-fns'
+import Modal from '@/components/Modal'
 import {
   getDashboardData,
+  getCurrentUser,
+  updateTopup,
   type DashboardData,
+  type TopUp,
   UNIT_GROUP_ITEMS,
   DOLLAR_GROUP_ITEMS,
   POINT_BASED_ITEMS,
+  TOPUP_PRODUCTS,
   getPointCategories,
 } from '@/lib/store'
 
 type ViewMode = 'unit' | 'point'
+type ChartRange = 'weekly' | 'monthly'
+
+const PIE_COLORS = ['#3b82f6', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444']
 
 function KPICard({
   title,
@@ -42,17 +62,36 @@ function KPICard({
   )
 }
 
+const todayStr = () => new Date().toISOString().split('T')[0]
+
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<ViewMode>('point')
+  const [chartRange, setChartRange] = useState<ChartRange>('weekly')
 
-  useEffect(() => {
+  // Update Payment modal state
+  const [updateModalOpen, setUpdateModalOpen] = useState(false)
+  const [updatingTopup, setUpdatingTopup] = useState<TopUp | null>(null)
+  const [updateForm, setUpdateForm] = useState({
+    product: '',
+    lastTopUpDate: todayStr(),
+    paymentPeriod: '1',
+  })
+  const [saving, setSaving] = useState(false)
+
+  const currentUser = getCurrentUser()
+
+  const reload = () => {
     try {
       setData(getDashboardData())
     } catch {
       // leave data null
     }
+  }
+
+  useEffect(() => {
+    reload()
     setLoading(false)
   }, [])
 
@@ -76,9 +115,23 @@ export default function DashboardPage() {
     }
   }
 
+  const formatMonth = (m: string) => {
+    try {
+      const [year, month] = m.split('-')
+      return format(new Date(parseInt(year), parseInt(month) - 1), 'MMM yyyy')
+    } catch {
+      return m
+    }
+  }
+
   const weeklyChartData = data.weeklyData.map((d) => ({
     ...d,
     date: formatDate(d.date),
+  }))
+
+  const monthlyChartData = data.monthlyData.map((d) => ({
+    ...d,
+    month: formatMonth(d.month),
   }))
 
   const now = new Date()
@@ -94,6 +147,49 @@ export default function DashboardPage() {
   const pointCategories = getPointCategories()
   const unitSummary = data.unitSummaryToday
   const pointSummary = data.pointSummaryToday
+
+  // Handle "Update Payment" button click
+  const openUpdateModal = (topup: TopUp) => {
+    setUpdatingTopup(topup)
+    setUpdateForm({
+      product: TOPUP_PRODUCTS.includes(topup.product as typeof TOPUP_PRODUCTS[number])
+        ? topup.product
+        : '',
+      lastTopUpDate: todayStr(),
+      paymentPeriod: String(topup.paymentPeriod || 1),
+    })
+    setUpdateModalOpen(true)
+  }
+
+  const computedUpdateExpire = () => {
+    try {
+      return addMonths(
+        new Date(updateForm.lastTopUpDate),
+        parseInt(updateForm.paymentPeriod) || 0
+      )
+    } catch {
+      return null
+    }
+  }
+
+  const handleUpdatePayment = () => {
+    if (!updatingTopup) return
+    setSaving(true)
+    const expire = computedUpdateExpire()
+    updateTopup(updatingTopup.id, {
+      product: updateForm.product,
+      lastTopUpDate: updateForm.lastTopUpDate,
+      paymentPeriod: parseInt(updateForm.paymentPeriod),
+      expireDate: expire ? expire.toISOString() : new Date().toISOString(),
+      createdBy: currentUser?.fullName ?? '',
+    })
+    setSaving(false)
+    setUpdateModalOpen(false)
+    setUpdatingTopup(null)
+    reload()
+  }
+
+  const updateExpirePreview = computedUpdateExpire()
 
   return (
     <div className="space-y-6">
@@ -229,60 +325,120 @@ export default function DashboardPage() {
           </div>
         </div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full bg-purple-500" />
-            Point Summary — Today
-          </h2>
-          <div className="space-y-4">
-            {pointCategories.map((cat) => {
-              const items = POINT_BASED_ITEMS.filter((i) => i.category === cat)
-              return (
-                <div key={cat}>
-                  <h3 className="text-sm font-semibold text-gray-600 mb-2">{cat}</h3>
-                  <div className="space-y-2">
-                    {items.map((item) => {
-                      const entry = pointSummary.items[item.name] ?? { quantity: 0, points: 0 }
-                      const multiplierLabel =
-                        item.bonusPoints
-                          ? `×${item.pointMultiplier ?? 0} +${item.bonusPoints} pts`
-                          : `×${item.pointMultiplier ?? 0} pts`
-                      return (
-                        <div key={item.name} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                          <div className="flex-1">
-                            <span className="text-sm text-gray-700">{item.name}</span>
-                            <span className="text-xs text-gray-400 ml-2">({multiplierLabel})</span>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          {/* Point Summary List */}
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-purple-500" />
+              Point Summary — Today
+            </h2>
+            <div className="space-y-4">
+              {pointCategories.map((cat) => {
+                const items = POINT_BASED_ITEMS.filter((i) => i.category === cat)
+                return (
+                  <div key={cat}>
+                    <h3 className="text-sm font-semibold text-gray-600 mb-2">{cat}</h3>
+                    <div className="space-y-2">
+                      {items.map((item) => {
+                        const entry = pointSummary.items[item.name] ?? { quantity: 0, points: 0 }
+                        const multiplierLabel =
+                          item.bonusPoints
+                            ? `×${item.pointMultiplier ?? 0} +${item.bonusPoints} pts`
+                            : `×${item.pointMultiplier ?? 0} pts`
+                        return (
+                          <div key={item.name} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                            <div className="flex-1">
+                              <span className="text-sm text-gray-700">{item.name}</span>
+                              <span className="text-xs text-gray-400 ml-2">({multiplierLabel})</span>
+                            </div>
+                            <div className="flex items-center gap-4">
+                              <span className="text-xs text-gray-500">{entry.quantity} qty</span>
+                              <span className="text-sm font-bold text-purple-700 w-16 text-right">{entry.points} pts</span>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-4">
-                            <span className="text-xs text-gray-500">{entry.quantity} qty</span>
-                            <span className="text-sm font-bold text-purple-700 w-16 text-right">{entry.points} pts</span>
-                          </div>
-                        </div>
-                      )
-                    })}
+                        )
+                      })}
+                    </div>
                   </div>
-                </div>
-              )
-            })}
-            <div className="flex items-center justify-between p-3 bg-purple-50 rounded-lg border border-purple-200 mt-2">
-              <span className="text-sm font-semibold text-purple-800">Total Points</span>
-              <span className="text-sm font-bold text-purple-800">{pointSummary.totalPoints} pts</span>
+                )
+              })}
+              <div className="flex items-center justify-between p-3 bg-purple-50 rounded-lg border border-purple-200 mt-2">
+                <span className="text-sm font-semibold text-purple-800">Total Points</span>
+                <span className="text-sm font-bold text-purple-800">{pointSummary.totalPoints} pts</span>
+              </div>
             </div>
+          </div>
+
+          {/* Point Category Chart */}
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-purple-500" />
+              Points by Category — Today
+            </h2>
+            {data.pointCategoryChart.every((c) => c.points === 0) ? (
+              <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
+                No point sales recorded today
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={data.pointCategoryChart} layout="vertical" margin={{ left: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis type="number" tick={{ fontSize: 12 }} />
+                  <YAxis
+                    dataKey="category"
+                    type="category"
+                    tick={{ fontSize: 11 }}
+                    width={100}
+                  />
+                  <Tooltip />
+                  <Bar dataKey="points" name="Points" radius={[0, 4, 4, 0]}>
+                    {data.pointCategoryChart.map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
       )}
 
-      {/* Weekly Chart + Expiring Top-ups */}
+      {/* Sales Chart + Expiring Top-ups */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div className="xl:col-span-2 bg-white rounded-xl shadow-sm p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <TrendingUp size={20} className="text-slate-600" />
-            <h2 className="text-lg font-semibold text-gray-900">Weekly Sales</h2>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <TrendingUp size={20} className="text-slate-600" />
+              <h2 className="text-lg font-semibold text-gray-900">
+                {chartRange === 'weekly' ? 'Weekly Sales' : 'Monthly Sales'}
+              </h2>
+            </div>
+            {/* Weekly / Monthly Toggle */}
+            <div className="flex bg-gray-100 rounded-lg p-1">
+              {(['weekly', 'monthly'] as const).map((range) => (
+                <button
+                  key={range}
+                  onClick={() => setChartRange(range)}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                    chartRange === range
+                      ? 'bg-slate-800 text-white shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  {range === 'weekly' ? 'Weekly' : 'Monthly'}
+                </button>
+              ))}
+            </div>
           </div>
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={weeklyChartData}>
+            <BarChart
+              data={chartRange === 'weekly' ? weeklyChartData : monthlyChartData}
+            >
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+              <XAxis
+                dataKey={chartRange === 'weekly' ? 'date' : 'month'}
+                tick={{ fontSize: 12 }}
+              />
               <YAxis tick={{ fontSize: 12 }} />
               <Tooltip />
               <Legend />
@@ -304,14 +460,23 @@ export default function DashboardPage() {
               {data.expiringTopups.map((t) => {
                 const status = getTopupStatus(t.expireDate)
                 return (
-                  <div key={t.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{t.customerName}</p>
-                      <p className="text-xs text-gray-500">{t.product}</p>
+                  <div key={t.id} className="p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{t.customerName}</p>
+                        <p className="text-xs text-gray-500">{t.product}</p>
+                      </div>
+                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${status.color}`}>
+                        {status.label}
+                      </span>
                     </div>
-                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${status.color}`}>
-                      {status.label}
-                    </span>
+                    <button
+                      onClick={() => openUpdateModal(t)}
+                      className="mt-2 w-full flex items-center justify-center gap-1 text-xs font-medium text-white bg-amber-500 hover:bg-amber-600 rounded-lg px-3 py-1.5 transition-colors"
+                    >
+                      <RefreshCw size={12} />
+                      Update Payment
+                    </button>
                   </div>
                 )
               })}
@@ -370,6 +535,95 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Update Payment Modal */}
+      <Modal
+        isOpen={updateModalOpen}
+        onClose={() => { setUpdateModalOpen(false); setUpdatingTopup(null) }}
+        title="Update Payment"
+      >
+        <div className="space-y-4">
+          {/* Username (read-only, from login) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+            <input
+              type="text"
+              value={currentUser?.fullName ?? ''}
+              readOnly
+              className="w-full border rounded-lg px-3 py-2 bg-gray-50 text-gray-600 focus:outline-none"
+            />
+          </div>
+
+          {updatingTopup && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm">
+              <p className="font-medium text-blue-800">Customer: {updatingTopup.customerName}</p>
+              <p className="text-blue-600 text-xs mt-1">Phone: {updatingTopup.customerPhone}</p>
+            </div>
+          )}
+
+          {/* Product Dropdown */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Product *</label>
+            <select
+              value={updateForm.product}
+              onChange={(e) => setUpdateForm({ ...updateForm, product: e.target.value })}
+              className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-300"
+            >
+              <option value="">— Select product —</option>
+              {TOPUP_PRODUCTS.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Last Top Up Date */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Last Top Up Date *</label>
+            <input
+              type="date"
+              value={updateForm.lastTopUpDate}
+              onChange={(e) => setUpdateForm({ ...updateForm, lastTopUpDate: e.target.value })}
+              className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-300"
+            />
+          </div>
+
+          {/* Payment Period */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Period (months) *</label>
+            <input
+              type="number"
+              value={updateForm.paymentPeriod}
+              onChange={(e) => setUpdateForm({ ...updateForm, paymentPeriod: e.target.value })}
+              className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-300"
+              placeholder="e.g. 1, 3, 6, 12"
+              min="1"
+            />
+          </div>
+
+          {updateExpirePreview && (
+            <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm">
+              <span className="font-medium text-green-800">New Expire Date: </span>
+              <span className="text-green-700">{format(updateExpirePreview, 'MMMM d, yyyy')}</span>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              onClick={() => { setUpdateModalOpen(false); setUpdatingTopup(null) }}
+              className="px-4 py-2 text-gray-600 border rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleUpdatePayment}
+              disabled={saving || !updateForm.product}
+              className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50 transition-colors"
+            >
+              {saving ? 'Saving...' : 'Update Payment'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

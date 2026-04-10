@@ -9,8 +9,10 @@ import {
   addTopup,
   deleteTopup,
   getCustomers,
+  getCurrentUser,
   type TopUp,
   type Customer,
+  TOPUP_PRODUCTS,
 } from '@/lib/store'
 
 const todayStr = () => new Date().toISOString().split('T')[0]
@@ -39,6 +41,8 @@ export default function TopUpPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
+
+  const currentUser = getCurrentUser()
 
   const computedExpire = () => {
     try {
@@ -83,6 +87,7 @@ export default function TopUpPage() {
       lastTopUpDate: form.lastTopUpDate,
       paymentPeriod: parseInt(form.paymentPeriod),
       expireDate: expire ? expire.toISOString() : new Date().toISOString(),
+      createdBy: currentUser?.fullName ?? '',
     })
     setSaving(false)
     setModalOpen(false)
@@ -125,50 +130,66 @@ export default function TopUpPage() {
             <p>No top-ups yet</p>
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b">
-              <tr className="text-left text-gray-500">
-                <th className="px-6 py-3 font-medium">Customer</th>
-                <th className="px-6 py-3 font-medium">Phone</th>
-                <th className="px-6 py-3 font-medium">Product</th>
-                <th className="px-6 py-3 font-medium">Last Top Up</th>
-                <th className="px-6 py-3 font-medium">Period</th>
-                <th className="px-6 py-3 font-medium">Expire Date</th>
-                <th className="px-6 py-3 font-medium">Status</th>
-                <th className="px-6 py-3 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {topups.map((t) => {
-                const status = getStatus(t.expireDate)
-                return (
-                  <tr key={t.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 font-medium">{t.customerName}</td>
-                    <td className="px-6 py-4 text-gray-600">{t.customerPhone}</td>
-                    <td className="px-6 py-4 text-gray-700">{t.product}</td>
-                    <td className="px-6 py-4 text-gray-500">{format(new Date(t.lastTopUpDate), 'MMM d, yyyy')}</td>
-                    <td className="px-6 py-4 text-gray-500">{t.paymentPeriod} mo</td>
-                    <td className="px-6 py-4 font-medium">{format(new Date(t.expireDate), 'MMM d, yyyy')}</td>
-                    <td className="px-6 py-4">
-                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${status.className}`}>
-                        {status.label}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <button onClick={() => handleDelete(t.id)} className="p-1 text-gray-400 hover:text-red-600 transition-colors">
-                        <Trash2 size={16} />
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b">
+                <tr className="text-left text-gray-500">
+                  <th className="px-6 py-3 font-medium">Customer</th>
+                  <th className="px-6 py-3 font-medium">Phone</th>
+                  <th className="px-6 py-3 font-medium">Product</th>
+                  <th className="px-6 py-3 font-medium">Last Top Up</th>
+                  <th className="px-6 py-3 font-medium">Period</th>
+                  <th className="px-6 py-3 font-medium">Expire Date</th>
+                  <th className="px-6 py-3 font-medium">Status</th>
+                  <th className="px-6 py-3 font-medium">Created By</th>
+                  <th className="px-6 py-3 font-medium">Created At</th>
+                  <th className="px-6 py-3 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {topups.map((t) => {
+                  const status = getStatus(t.expireDate)
+                  return (
+                    <tr key={t.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 font-medium">{t.customerName}</td>
+                      <td className="px-6 py-4 text-gray-600">{t.customerPhone}</td>
+                      <td className="px-6 py-4 text-gray-700">{t.product}</td>
+                      <td className="px-6 py-4 text-gray-500">{format(new Date(t.lastTopUpDate), 'MMM d, yyyy')}</td>
+                      <td className="px-6 py-4 text-gray-500">{t.paymentPeriod} mo</td>
+                      <td className="px-6 py-4 font-medium">{format(new Date(t.expireDate), 'MMM d, yyyy')}</td>
+                      <td className="px-6 py-4">
+                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${status.className}`}>
+                          {status.label}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-gray-500">{t.createdBy || '—'}</td>
+                      <td className="px-6 py-4 text-gray-500">{format(new Date(t.createdAt), 'MMM d, yyyy')}</td>
+                      <td className="px-6 py-4">
+                        <button onClick={() => handleDelete(t.id)} className="p-1 text-gray-400 hover:text-red-600 transition-colors">
+                          <Trash2 size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Add Top Up">
         <div className="space-y-4">
+          {/* Username (read-only, from login) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+            <input
+              type="text"
+              value={currentUser?.fullName ?? ''}
+              readOnly
+              className="w-full border rounded-lg px-3 py-2 bg-gray-50 text-gray-600 focus:outline-none"
+            />
+          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Customer (optional)</label>
             <select
@@ -205,14 +226,17 @@ export default function TopUpPage() {
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Product Name *</label>
-            <input
-              type="text"
+            <label className="block text-sm font-medium text-gray-700 mb-1">Product *</label>
+            <select
               value={form.product}
               onChange={(e) => setForm({ ...form, product: e.target.value })}
               className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-300"
-              placeholder="e.g. Premium Plan"
-            />
+            >
+              <option value="">— Select product —</option>
+              {TOPUP_PRODUCTS.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Last Top Up Date *</label>
