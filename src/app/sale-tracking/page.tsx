@@ -15,6 +15,30 @@ import {
 
 type TabKey = 'tracking' | 'performance'
 
+type PointSummary = {
+  mode: 'point'
+  total: number
+  min: number
+  gate: number
+  otb: number
+  oab: number
+  dailyNeeded: number | null
+  tier: 'oab' | 'otb' | 'gate' | 'min' | 'below'
+}
+
+type VolumeSummary = {
+  mode: 'volume'
+  total: number
+  target: number
+  actual: number
+  dailyNeeded: number | null
+  tier: 'oab' | 'otb' | 'gate' | 'min' | 'below'
+  valueMode?: string
+  currencyType?: string
+}
+
+type TrackingSummary = PointSummary | VolumeSummary
+
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
 /* ------------------------------------------------------------------ */
@@ -519,7 +543,7 @@ function TrackingTab({
   todayStr,
   activeKPI,
 }: {
-  summary: any
+  summary: TrackingSummary
   dailyData: { day: number; date: string; dayLabel: string; value: number; cumulative: number }[]
   todayStr: string
   activeKPI: KPIRecord | null
@@ -732,7 +756,7 @@ function PointKPITable({
           return (
             <tr key={t.key} className={`border-t border-gray-50 ${achieved ? achBg(100) : ''}`}>
               <td className="px-4 py-2.5 font-medium">
-                <span className={`inline-block w-2 h-2 rounded-full mr-2 ${TIER_COLORS[t.key].bg.replace('bg-', 'bg-')}`} />
+                <span className={`inline-block w-2 h-2 rounded-full mr-2 ${TIER_COLORS[t.key].bg}`} />
                 {t.label}
               </td>
               <td className="px-4 py-2.5 text-right">{fmtNum(t.target)}</td>
