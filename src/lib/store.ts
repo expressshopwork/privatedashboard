@@ -837,7 +837,8 @@ export function computeKPIAchievement(
   if (kpi.mode === 'point') {
     for (const s of scopedSales) {
       if (s.type === 'point') {
-        // Prefer kpiPoints, fall back to pointsEarned for backward compatibility
+        // Prefer kpiPoints (computed via ServicePointRule: amount × rate + addOn).
+        // Fall back to pointsEarned for legacy sales created before kpiPoints was introduced.
         actual += s.kpiPoints ?? s.pointsEarned ?? 0
       }
     }
