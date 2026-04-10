@@ -243,6 +243,7 @@ export interface Sale {
   date: string
   notes: string | null
   customer: { name: string } | null
+  createdBy: string
   createdAt: string
 }
 
@@ -289,18 +290,6 @@ export interface MonthlyData {
   units: number
   points: number
   revenue: number
-}
-
-export interface DashboardData {
-  kpis: {
-    salesToday: number
-    revenueToday: number
-    totalCustomers: number
-    activeTopups: number
-  }
-  recentSales: Sale[]
-  expiringTopups: TopUp[]
-  weeklyData: WeeklyData[]
 }
 
 // ---------------------------------------------------------------------------
@@ -439,6 +428,7 @@ export function addSale(data: {
   pointsEarned?: number | null
   date?: string
   notes?: string | null
+  createdBy?: string
 }): Sale {
   const sales = readRawSales()
   const customers = readRawCustomers()
@@ -461,6 +451,7 @@ export function addSale(data: {
           return found ? { name: found.name } : null
         })()
       : null,
+    createdBy: data.createdBy ?? '',
     createdAt: now,
   }
   sales.push(newSale)
@@ -617,6 +608,23 @@ export interface DashboardData {
   unitSummaryToday: UnitDaySummary
   pointSummaryToday: PointDaySummary
   pointCategoryChart: PointCategoryChartData[]
+  /** Comparison stats for weekly/monthly growth */
+  weeklyComparison: {
+    thisWeekUnits: number
+    lastWeekUnits: number
+    thisWeekPoints: number
+    lastWeekPoints: number
+    thisWeekRevenue: number
+    lastWeekRevenue: number
+  }
+  monthlyComparison: {
+    thisMonthUnits: number
+    lastMonthUnits: number
+    thisMonthPoints: number
+    lastMonthPoints: number
+    thisMonthRevenue: number
+    lastMonthRevenue: number
+  }
 }
 
 function buildUnitSummary(salesList: Sale[]): UnitDaySummary {
@@ -691,11 +699,11 @@ export function getDashboardData(): DashboardData {
         : null,
     }))
 
-  // Expiring top-ups (within 30 days, sorted by expireDate)
-  const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+  // Expiring top-ups (within 7 days, sorted by expireDate)
+  const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
   const expiringTopups = topups
     .filter(
-      (t) => new Date(t.expireDate) >= now && new Date(t.expireDate) <= thirtyDaysFromNow
+      (t) => new Date(t.expireDate) >= now && new Date(t.expireDate) <= sevenDaysFromNow
     )
     .sort((a, b) => new Date(a.expireDate).getTime() - new Date(b.expireDate).getTime())
     .slice(0, 5)
@@ -759,6 +767,41 @@ export function getDashboardData(): DashboardData {
     ([category, points]) => ({ category, points })
   )
 
+  // Weekly comparison: this week (last 7 days) vs previous week (7-14 days ago)
+  const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000)
+  const thisWeek = { units: 0, points: 0, revenue: 0 }
+  const lastWeek = { units: 0, points: 0, revenue: 0 }
+  for (const sale of sales) {
+    const d = new Date(sale.date)
+    if (d >= sevenDaysAgo && d <= now) {
+      thisWeek.revenue += sale.totalAmount
+      if (sale.type === 'unit') thisWeek.units += sale.quantity ?? 0
+      else thisWeek.points += sale.pointsEarned ?? 0
+    } else if (d >= fourteenDaysAgo && d < sevenDaysAgo) {
+      lastWeek.revenue += sale.totalAmount
+      if (sale.type === 'unit') lastWeek.units += sale.quantity ?? 0
+      else lastWeek.points += sale.pointsEarned ?? 0
+    }
+  }
+
+  // Monthly comparison: this month vs last month
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const thisMonth = { units: 0, points: 0, revenue: 0 }
+  const lastMonth = { units: 0, points: 0, revenue: 0 }
+  for (const sale of sales) {
+    const d = new Date(sale.date)
+    if (d >= thisMonthStart && d <= now) {
+      thisMonth.revenue += sale.totalAmount
+      if (sale.type === 'unit') thisMonth.units += sale.quantity ?? 0
+      else thisMonth.points += sale.pointsEarned ?? 0
+    } else if (d >= lastMonthStart && d < thisMonthStart) {
+      lastMonth.revenue += sale.totalAmount
+      if (sale.type === 'unit') lastMonth.units += sale.quantity ?? 0
+      else lastMonth.points += sale.pointsEarned ?? 0
+    }
+  }
+
   return {
     kpis: {
       salesToday: salesTodayList.length,
@@ -773,5 +816,21 @@ export function getDashboardData(): DashboardData {
     unitSummaryToday: buildUnitSummary(salesTodayList),
     pointSummaryToday: buildPointSummary(salesTodayList),
     pointCategoryChart,
+    weeklyComparison: {
+      thisWeekUnits: thisWeek.units,
+      lastWeekUnits: lastWeek.units,
+      thisWeekPoints: thisWeek.points,
+      lastWeekPoints: lastWeek.points,
+      thisWeekRevenue: thisWeek.revenue,
+      lastWeekRevenue: lastWeek.revenue,
+    },
+    monthlyComparison: {
+      thisMonthUnits: thisMonth.units,
+      lastMonthUnits: lastMonth.units,
+      thisMonthPoints: thisMonth.points,
+      lastMonthPoints: lastMonth.points,
+      thisMonthRevenue: thisMonth.revenue,
+      lastMonthRevenue: lastMonth.revenue,
+    },
   }
 }
