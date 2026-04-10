@@ -1,15 +1,18 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
-import { Target, ChevronDown } from 'lucide-react'
+import { Target, ChevronDown, Users } from 'lucide-react'
 import {
   getSettings,
   getSales,
+  getCurrentUser,
+  getUsers,
   type KPISettings,
   type Sale,
   type KPIItem,
   type SIPPositionConfig,
   type NewSIPPositionConfig,
+  type AppUser,
   UNIT_GROUP_ITEMS,
   DOLLAR_GROUP_ITEMS,
 } from '@/lib/store'
@@ -114,8 +117,11 @@ function getMonthOptions(): { value: string; label: string }[] {
 
 export default function SaleTrackingPage() {
   const [settings, setSettings] = useState<KPISettings | null>(null)
-  const [sales, setSales] = useState<Sale[]>([])
+  const [allSales, setAllSales] = useState<Sale[]>([])
   const [viewMode, setViewMode] = useState<ViewMode>('unit')
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null)
+  const [allUsers, setAllUsers] = useState<AppUser[]>([])
+  const [trackingMode, setTrackingMode] = useState<'my' | 'shop'>('my')
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
@@ -125,6 +131,8 @@ export default function SaleTrackingPage() {
 
   useEffect(() => {
     setSettings(getSettings())
+    setCurrentUser(getCurrentUser())
+    setAllUsers(getUsers())
   }, [])
 
   useEffect(() => {
@@ -132,10 +140,51 @@ export default function SaleTrackingPage() {
     const [year, month] = selectedMonth.split('-').map(Number)
     const from = new Date(year, month - 1, 1).toISOString().split('T')[0]
     const to = new Date(year, month, 0).toISOString().split('T')[0]
-    setSales(getSales({ from, to }))
+    setAllSales(getSales({ from, to }))
   }, [selectedMonth])
 
-  if (!settings) {
+  const isAgent = currentUser?.role === 'agent'
+  const isSup = currentUser?.role === 'sup'
+  const userBranch = currentUser?.branch || ''
+
+  // Filter sales based on tracking mode
+  const sales = useMemo(() => {
+    if (!currentUser) return allSales
+    if (trackingMode === 'my' && isAgent) {
+      return allSales.filter((s) => s.createdBy === currentUser.fullName)
+    }
+    if (trackingMode === 'shop' || isSup) {
+      if (userBranch) {
+        const branchUsers = allUsers
+          .filter((u) => u.branch === userBranch && (u.role === 'agent' || u.role === 'sup'))
+          .map((u) => u.fullName)
+        return allSales.filter((s) => branchUsers.includes(s.createdBy))
+      }
+      return allSales
+    }
+    return allSales
+  }, [allSales, trackingMode, isAgent, isSup, currentUser, userBranch, allUsers])
+
+  const kpiItems = useMemo(() => settings?.kpiItems ?? [], [settings])
+  const currentScheme = settings?.currentScheme ?? []
+  const newScheme = settings?.newScheme ?? []
+
+  // Get KPIs matching the user's role and branch
+  const myKpiItems = useMemo(() => {
+    if (!currentUser) return kpiItems
+    if (trackingMode === 'my' && (isAgent || isSup)) {
+      const role = currentUser.role as 'agent' | 'sup'
+      return kpiItems.filter(
+        (k) => k.role === role && (!k.branch || k.branch === userBranch),
+      )
+    }
+    if (trackingMode === 'shop') {
+      return kpiItems.filter((k) => !k.branch || k.branch === userBranch)
+    }
+    return kpiItems
+  }, [kpiItems, trackingMode, isAgent, isSup, currentUser, userBranch])
+
+  if (!settings || !currentUser) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-slate-800" />
@@ -143,10 +192,8 @@ export default function SaleTrackingPage() {
     )
   }
 
-  const { kpiItems, currentScheme, newScheme } = settings
-
   // ---- Unit-based tracking ----
-  const unitKPIRows = kpiItems.map((kpi) => {
+  const unitKPIRows = myKpiItems.map((kpi) => {
     const actual = computeKPIActual(kpi.name, sales)
     const level = getLevel(actual, kpi.gateTarget, kpi.otbTarget, kpi.oabTarget)
     return { ...kpi, actual, level }
@@ -197,9 +244,29 @@ export default function SaleTrackingPage() {
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Sale Tracking</h1>
-          <p className="text-gray-500 text-sm mt-1">Compare KPI targets vs actual achievements</p>
+          <p className="text-gray-500 text-sm mt-1">
+            {trackingMode === 'my'
+              ? `Your KPI targets vs actual achievements${userBranch ? ` (${userBranch})` : ''}`
+              : `Shop performance (Agent + Sup)${userBranch ? ` – ${userBranch}` : ''}`}
+          </p>
         </div>
         <div className="flex items-center gap-3">
+          {/* Tracking Mode Toggle */}
+          <div className="flex bg-white border rounded-lg overflow-hidden">
+            <button
+              onClick={() => setTrackingMode('my')}
+              className={`px-4 py-2 text-sm font-medium transition-colors flex items-center gap-1.5 ${trackingMode === 'my' ? 'bg-purple-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              My Performance
+            </button>
+            <button
+              onClick={() => setTrackingMode('shop')}
+              className={`px-4 py-2 text-sm font-medium transition-colors flex items-center gap-1.5 ${trackingMode === 'shop' ? 'bg-purple-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              <Users size={14} />
+              Shop Performance
+            </button>
+          </div>
           {/* Month Selector */}
           <div className="relative">
             <select
@@ -256,6 +323,7 @@ export default function SaleTrackingPage() {
                   <tr className="bg-gray-50 text-left text-gray-600">
                     <th className="px-3 py-2 font-medium">No.</th>
                     <th className="px-3 py-2 font-medium">KPI Name</th>
+                    <th className="px-3 py-2 font-medium">Role</th>
                     <th className="px-3 py-2 font-medium text-right">WT (%)</th>
                     <th className="px-3 py-2 font-medium text-right">Gate</th>
                     <th className="px-3 py-2 font-medium text-right">OTB</th>
@@ -270,6 +338,11 @@ export default function SaleTrackingPage() {
                     <tr key={idx} className="hover:bg-gray-50">
                       <td className="px-3 py-2 text-gray-500">{idx + 1}</td>
                       <td className="px-3 py-2 font-medium text-gray-900">{row.name}</td>
+                      <td className="px-3 py-2">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${row.role === 'sup' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
+                          {row.role}
+                        </span>
+                      </td>
                       <td className="px-3 py-2 text-right">{row.weight}%</td>
                       <td className="px-3 py-2 text-right text-gray-600">{row.gateTarget.toLocaleString()}</td>
                       <td className="px-3 py-2 text-right text-gray-600">{row.otbTarget.toLocaleString()}</td>
@@ -284,8 +357,8 @@ export default function SaleTrackingPage() {
                 </tbody>
                 <tfoot>
                   <tr className="bg-gray-50 font-semibold text-gray-900">
-                    <td className="px-3 py-3" colSpan={2}>Total</td>
-                    <td className="px-3 py-3 text-right">{kpiItems.reduce((s, r) => s + r.weight, 0)}%</td>
+                    <td className="px-3 py-3" colSpan={3}>Total</td>
+                    <td className="px-3 py-3 text-right">{myKpiItems.reduce((s, r) => s + r.weight, 0)}%</td>
                     <td colSpan={5} />
                     <td className="px-3 py-3 text-right text-lg">${totalUnitPayment.toFixed(2)}</td>
                   </tr>
