@@ -43,11 +43,15 @@ function GrowthBadge({ current, previous, label }: { current: number; previous: 
   const pct = calcGrowth(current, previous)
   if (pct === null) return null
   const isUp = pct >= 0
+  const direction = isUp ? 'up' : 'down'
   return (
     <div className="flex items-center gap-1.5 text-xs">
       <span className="text-gray-500">{label}:</span>
-      <span className={`flex items-center gap-0.5 font-semibold ${isUp ? 'text-green-600' : 'text-red-600'}`}>
-        {isUp ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+      <span
+        className={`flex items-center gap-0.5 font-semibold ${isUp ? 'text-green-600' : 'text-red-600'}`}
+        aria-label={`${label}: ${isUp ? '+' : ''}${pct.toFixed(1)}% ${direction}`}
+      >
+        {isUp ? <TrendingUp size={12} aria-hidden="true" /> : <TrendingDown size={12} aria-hidden="true" />}
         {isUp ? '+' : ''}{pct.toFixed(1)}%
       </span>
     </div>
@@ -449,9 +453,22 @@ export default function DashboardPage() {
                     paddingAngle={4}
                     dataKey="points"
                     nameKey="category"
-                    label={({ category, percent }) =>
-                      `${category} ${(percent * 100).toFixed(0)}%`
-                    }
+                    label={({ x, y, category, percent }) => (
+                      <text
+                        x={x}
+                        y={y}
+                        fill="#374151"
+                        fontSize={12}
+                        fontWeight={600}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        stroke="#fff"
+                        strokeWidth={3}
+                        paintOrder="stroke"
+                      >
+                        {`${category} ${(percent * 100).toFixed(0)}%`}
+                      </text>
+                    )}
                     labelLine={true}
                   >
                     {data.pointCategoryChart
