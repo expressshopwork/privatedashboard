@@ -499,26 +499,23 @@ export function updateSale(
     date?: string
     notes?: string | null
     createdBy?: string
-    customerName?: string | null
-    customerPhone?: string | null
   }
 ): Sale {
   const sales = readRawSales()
   const idx = sales.findIndex((s) => s.id === id)
   if (idx === -1) throw new Error('Sale not found')
-  sales[idx] = {
-    ...sales[idx],
-    ...(data.type !== undefined ? { type: data.type } : {}),
-    ...(data.serviceName !== undefined ? { serviceName: data.serviceName } : {}),
-    ...(data.category !== undefined ? { category: data.category } : {}),
-    ...(data.quantity !== undefined ? { quantity: data.quantity } : {}),
-    ...(data.unitPrice !== undefined ? { unitPrice: data.unitPrice } : {}),
-    ...(data.totalAmount !== undefined ? { totalAmount: data.totalAmount } : {}),
-    ...(data.pointsEarned !== undefined ? { pointsEarned: data.pointsEarned } : {}),
-    ...(data.date !== undefined ? { date: new Date(data.date).toISOString() } : {}),
-    ...(data.notes !== undefined ? { notes: data.notes } : {}),
-    ...(data.createdBy !== undefined ? { createdBy: data.createdBy } : {}),
-  }
+  const update: Partial<Sale> = {}
+  if (data.type !== undefined) update.type = data.type
+  if (data.serviceName !== undefined) update.serviceName = data.serviceName
+  if (data.category !== undefined) update.category = data.category
+  if (data.quantity !== undefined) update.quantity = data.quantity
+  if (data.unitPrice !== undefined) update.unitPrice = data.unitPrice
+  if (data.totalAmount !== undefined) update.totalAmount = data.totalAmount
+  if (data.pointsEarned !== undefined) update.pointsEarned = data.pointsEarned
+  if (data.date !== undefined) update.date = new Date(data.date).toISOString()
+  if (data.notes !== undefined) update.notes = data.notes
+  if (data.createdBy !== undefined) update.createdBy = data.createdBy
+  sales[idx] = { ...sales[idx], ...update }
   writeKey(SALES_KEY, sales)
   return sales[idx]
 }
