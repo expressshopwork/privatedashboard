@@ -24,6 +24,70 @@ function nextId(items: { id: number }[]): number {
 }
 
 // ---------------------------------------------------------------------------
+// Service item definitions
+// ---------------------------------------------------------------------------
+
+export interface ServiceItem {
+  name: string
+  category: string
+  /** For point-based: multiplier applied to quantity */
+  pointMultiplier?: number
+  /** For point-based: bonus points added if quantity > 0 */
+  bonusPoints?: number
+}
+
+/** Unit Based – Unit Group items (counted as units) */
+export const UNIT_GROUP_ITEMS: ServiceItem[] = [
+  { name: 'Gross Ads', category: 'Unit Group' },
+  { name: 'Smart@Home', category: 'Unit Group' },
+  { name: 'Fiber+', category: 'Unit Group' },
+  { name: 'SmartNas', category: 'Unit Group' },
+]
+
+/** Unit Based – Dollar Group items (entered as dollar amounts) */
+export const DOLLAR_GROUP_ITEMS: ServiceItem[] = [
+  { name: 'Buy Number', category: 'Dollar Group' },
+  { name: 'Change SIM', category: 'Dollar Group' },
+  { name: 'Recharge', category: 'Dollar Group' },
+  { name: 'Dealer SC', category: 'Dollar Group' },
+]
+
+/** Point Based – all service items grouped by category */
+export const POINT_BASED_ITEMS: ServiceItem[] = [
+  // MBB Pre-Paid
+  { name: 'Gross Add', category: 'MBB Pre-Paid', pointMultiplier: 1 },
+  { name: 'Change SIM', category: 'MBB Pre-Paid', pointMultiplier: 1 },
+  { name: 'Pre-Paid sub Recharge', category: 'MBB Pre-Paid', pointMultiplier: 1 },
+  { name: 'SC Selling', category: 'MBB Pre-Paid', pointMultiplier: 1 },
+  // FBB Home
+  { name: 'Home Internet Gross Add', category: 'FBB Home', pointMultiplier: 2 },
+  { name: 'FWBB Deposit / FTTx Signup', category: 'FBB Home', pointMultiplier: 2 },
+  { name: 'Home Internet Migration', category: 'FBB Home', pointMultiplier: 2 },
+  { name: 'Home Internet Recharge', category: 'FBB Home', pointMultiplier: 2 },
+  // FBB SME
+  { name: 'SME New Sub Gross Add', category: 'FBB SME', pointMultiplier: 2 },
+  { name: 'SME Existing Recharge', category: 'FBB SME', pointMultiplier: 2 },
+  // MBB ICT
+  { name: 'ICT Solution', category: 'MBB ICT', pointMultiplier: 2 },
+  // Other
+  { name: 'Device Handset/Accessory', category: 'Other', pointMultiplier: 0.5 },
+  { name: 'eSIM', category: 'Other', pointMultiplier: 0, bonusPoints: 2 },
+  { name: 'Smart NAS Download', category: 'Other', pointMultiplier: 0, bonusPoints: 2 },
+]
+
+/** Get unique point categories in order */
+export function getPointCategories(): string[] {
+  const seen = new Set<string>()
+  return POINT_BASED_ITEMS.reduce<string[]>((acc, item) => {
+    if (!seen.has(item.category)) {
+      seen.add(item.category)
+      acc.push(item.category)
+    }
+    return acc
+  }, [])
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -44,6 +108,10 @@ export interface Sale {
   id: number
   customerId: number | null
   type: string
+  /** Name of the service item sold */
+  serviceName: string | null
+  /** Category / group for the service item */
+  category: string | null
   quantity: number | null
   unitPrice: number | null
   totalAmount: number
@@ -221,6 +289,8 @@ export function getSales(filters?: {
 export function addSale(data: {
   customerId?: number | null
   type: string
+  serviceName?: string | null
+  category?: string | null
   quantity?: number | null
   unitPrice?: number | null
   totalAmount: number
@@ -235,6 +305,8 @@ export function addSale(data: {
     id: nextId(sales),
     customerId: data.customerId ?? null,
     type: data.type,
+    serviceName: data.serviceName ?? null,
+    category: data.category ?? null,
     quantity: data.quantity ?? null,
     unitPrice: data.unitPrice ?? null,
     totalAmount: data.totalAmount,
@@ -337,6 +409,70 @@ export function saveSettings(data: {
 // Dashboard aggregation
 // ---------------------------------------------------------------------------
 
+export interface UnitDaySummary {
+  unitGroup: Record<string, number>
+  dollarGroup: Record<string, number>
+  totalUnits: number
+  totalRevenue: number
+}
+
+export interface PointDaySummary {
+  items: Record<string, { quantity: number; points: number }>
+  totalPoints: number
+}
+
+export interface DashboardData {
+  kpis: {
+    salesToday: number
+    revenueToday: number
+    totalCustomers: number
+    activeTopups: number
+  }
+  recentSales: Sale[]
+  expiringTopups: TopUp[]
+  weeklyData: WeeklyData[]
+  unitSummaryToday: UnitDaySummary
+  pointSummaryToday: PointDaySummary
+}
+
+function buildUnitSummary(salesList: Sale[]): UnitDaySummary {
+  const unitGroup: Record<string, number> = {}
+  for (const item of UNIT_GROUP_ITEMS) unitGroup[item.name] = 0
+  const dollarGroup: Record<string, number> = {}
+  for (const item of DOLLAR_GROUP_ITEMS) dollarGroup[item.name] = 0
+
+  for (const s of salesList) {
+    if (s.type !== 'unit' || !s.serviceName) continue
+    if (s.category === 'Unit Group' && s.serviceName in unitGroup) {
+      unitGroup[s.serviceName] += s.quantity ?? 0
+    } else if (s.category === 'Dollar Group' && s.serviceName in dollarGroup) {
+      dollarGroup[s.serviceName] += s.totalAmount
+    }
+  }
+
+  const totalUnits = Object.values(unitGroup).reduce((a, b) => a + b, 0)
+  const totalRevenue = Object.values(dollarGroup).reduce((a, b) => a + b, 0)
+  return { unitGroup, dollarGroup, totalUnits, totalRevenue }
+}
+
+function buildPointSummary(salesList: Sale[]): PointDaySummary {
+  const items: Record<string, { quantity: number; points: number }> = {}
+  for (const item of POINT_BASED_ITEMS) {
+    items[item.name] = { quantity: 0, points: 0 }
+  }
+
+  for (const s of salesList) {
+    if (s.type !== 'point' || !s.serviceName) continue
+    if (s.serviceName in items) {
+      items[s.serviceName].quantity += s.quantity ?? 0
+      items[s.serviceName].points += s.pointsEarned ?? 0
+    }
+  }
+
+  const totalPoints = Object.values(items).reduce((a, b) => a + b.points, 0)
+  return { items, totalPoints }
+}
+
 export function getDashboardData(): DashboardData {
   const customers = readRawCustomers()
   const sales = readRawSales()
@@ -413,5 +549,7 @@ export function getDashboardData(): DashboardData {
     recentSales,
     expiringTopups,
     weeklyData: Object.values(weeklyMap),
+    unitSummaryToday: buildUnitSummary(salesTodayList),
+    pointSummaryToday: buildPointSummary(salesTodayList),
   }
 }
