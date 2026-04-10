@@ -308,11 +308,27 @@ export interface NewSIPPositionConfig {
   department: string
   grouping: string
   payoutMethod: string
+  min: number
   gate: number
   otb: number
   oab: number
   annualBonus: number
   paAllowance: number
+  /** Point target thresholds */
+  minPoints: number
+  gatePoints: number
+  otbPoints: number
+  oabPoints: number
+}
+
+/** Individual KPI definition for the unit-based scheme */
+export interface KPIItem {
+  name: string
+  /** Weight percentage (all items should sum to 100) */
+  weight: number
+  gateTarget: number
+  otbTarget: number
+  oabTarget: number
 }
 
 export interface KPISettings {
@@ -324,6 +340,8 @@ export interface KPISettings {
   currentScheme: SIPPositionConfig[]
   newScheme: NewSIPPositionConfig[]
   newSchemeEffectiveDate: string
+  /** Individual KPI items for the unit-based scheme */
+  kpiItems: KPIItem[]
 }
 
 export interface WeeklyData {
@@ -644,10 +662,17 @@ const DEFAULT_CURRENT_SCHEME: SIPPositionConfig[] = [
 ]
 
 const DEFAULT_NEW_SCHEME: NewSIPPositionConfig[] = [
-  { position: 'Assistant Smart Shop Supervisor', department: 'B2C Management', grouping: 'Store Supervisor', payoutMethod: 'Monthly', gate: 140, otb: 190, oab: 230, annualBonus: 0, paAllowance: 0 },
-  { position: 'Smart Shop Supervisor', department: 'B2C Management', grouping: 'Store Supervisor', payoutMethod: 'Monthly', gate: 140, otb: 190, oab: 230, annualBonus: 0, paAllowance: 0 },
-  { position: 'Front Office Agent', department: 'B2C Management', grouping: 'Frontline', payoutMethod: 'Monthly', gate: 65, otb: 80, oab: 105, annualBonus: 0, paAllowance: 0 },
-  { position: 'Front Office Agent Intern', department: 'B2C Management', grouping: 'Frontline', payoutMethod: 'Monthly', gate: 65, otb: 80, oab: 105, annualBonus: 0, paAllowance: 0 },
+  { position: 'Assistant Smart Shop Supervisor', department: 'B2C Management', grouping: 'Store Supervisor', payoutMethod: 'Monthly', min: 40, gate: 75, otb: 150, oab: 200, annualBonus: 0, paAllowance: 0, minPoints: 5600, gatePoints: 7000, otbPoints: 7500, oabPoints: 8000 },
+  { position: 'Smart Shop Supervisor', department: 'B2C Management', grouping: 'Store Supervisor', payoutMethod: 'Monthly', min: 40, gate: 75, otb: 150, oab: 200, annualBonus: 0, paAllowance: 0, minPoints: 5600, gatePoints: 7000, otbPoints: 7500, oabPoints: 8000 },
+  { position: 'Front Office Agent', department: 'B2C Management', grouping: 'Frontline', payoutMethod: 'Monthly', min: 25, gate: 50, otb: 75, oab: 100, annualBonus: 0, paAllowance: 0, minPoints: 800, gatePoints: 1000, otbPoints: 1100, oabPoints: 1300 },
+  { position: 'Front Office Agent Intern', department: 'B2C Management', grouping: 'Frontline', payoutMethod: 'Monthly', min: 25, gate: 50, otb: 75, oab: 100, annualBonus: 0, paAllowance: 0, minPoints: 800, gatePoints: 1000, otbPoints: 1100, oabPoints: 1300 },
+]
+
+const DEFAULT_KPI_ITEMS: KPIItem[] = [
+  { name: 'Gross Adds', weight: 30, gateTarget: 50, otbTarget: 65, oabTarget: 90 },
+  { name: 'Recharge', weight: 20, gateTarget: 500, otbTarget: 700, oabTarget: 800 },
+  { name: 'Smart@Home & Fiber+', weight: 25, gateTarget: 10, otbTarget: 15, oabTarget: 20 },
+  { name: 'Smart Nas Downloading/MAU', weight: 25, gateTarget: 20, otbTarget: 30, oabTarget: 40 },
 ]
 
 const DEFAULT_SETTINGS: KPISettings = {
@@ -659,6 +684,7 @@ const DEFAULT_SETTINGS: KPISettings = {
   currentScheme: DEFAULT_CURRENT_SCHEME,
   newScheme: DEFAULT_NEW_SCHEME,
   newSchemeEffectiveDate: '2026-04-01',
+  kpiItems: DEFAULT_KPI_ITEMS,
 }
 
 export function getSettings(): KPISettings {
@@ -667,6 +693,19 @@ export function getSettings(): KPISettings {
   if (!stored.currentScheme) stored.currentScheme = DEFAULT_CURRENT_SCHEME
   if (!stored.newScheme) stored.newScheme = DEFAULT_NEW_SCHEME
   if (!stored.newSchemeEffectiveDate) stored.newSchemeEffectiveDate = '2026-04-01'
+  if (!stored.kpiItems) stored.kpiItems = DEFAULT_KPI_ITEMS
+  // Ensure new scheme rows have point target fields
+  stored.newScheme = stored.newScheme.map((row) => {
+    const withDefaults: NewSIPPositionConfig = {
+      ...row,
+      min: (row as Partial<NewSIPPositionConfig>).min ?? 0,
+      minPoints: (row as Partial<NewSIPPositionConfig>).minPoints ?? 0,
+      gatePoints: (row as Partial<NewSIPPositionConfig>).gatePoints ?? 0,
+      otbPoints: (row as Partial<NewSIPPositionConfig>).otbPoints ?? 0,
+      oabPoints: (row as Partial<NewSIPPositionConfig>).oabPoints ?? 0,
+    }
+    return withDefaults
+  })
   return stored
 }
 
@@ -678,6 +717,7 @@ export function saveSettings(data: {
   currentScheme: SIPPositionConfig[]
   newScheme: NewSIPPositionConfig[]
   newSchemeEffectiveDate: string
+  kpiItems: KPIItem[]
 }): KPISettings {
   const settings: KPISettings = { id: 1, ...data }
   writeKey(SETTINGS_KEY, settings)
