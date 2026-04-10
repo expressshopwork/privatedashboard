@@ -172,8 +172,8 @@ export default function SaleTrackingPage() {
   // Get KPIs matching the user's role and branch
   const myKpiItems = useMemo(() => {
     if (!currentUser) return kpiItems
-    if (trackingMode === 'my' && (isAgent || isSup)) {
-      const role = currentUser.role as 'agent' | 'sup'
+    if (trackingMode === 'my' && currentUser.role !== 'admin' && (isAgent || isSup)) {
+      const role = currentUser.role
       return kpiItems.filter(
         (k) => k.role === role && (!k.branch || k.branch === userBranch),
       )
@@ -246,7 +246,7 @@ export default function SaleTrackingPage() {
           <h1 className="text-2xl font-bold text-gray-900">Sale Tracking</h1>
           <p className="text-gray-500 text-sm mt-1">
             {trackingMode === 'my'
-              ? `Your KPI targets vs actual achievements${userBranch ? ` (${userBranch})` : ''}`
+              ? `Your KPI targets vs actual achievements${userBranch ? ` – ${userBranch}` : ''}`
               : `Shop performance (Agent + Sup)${userBranch ? ` – ${userBranch}` : ''}`}
           </p>
         </div>

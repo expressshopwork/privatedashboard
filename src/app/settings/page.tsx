@@ -73,7 +73,9 @@ export default function SettingsPage() {
   }
 
   const addKPIItem = () => {
-    setKpiItems((prev) => [...prev, { name: '', weight: 0, gateTarget: 0, otbTarget: 0, oabTarget: 0, role: selectedRole === 'all' ? 'agent' : selectedRole, branch: selectedBranch === 'all' ? '' : selectedBranch }])
+    const newRole = selectedRole === 'all' ? 'agent' : selectedRole
+    const newBranch = selectedBranch === 'all' ? '' : selectedBranch
+    setKpiItems((prev) => [...prev, { name: '', weight: 0, gateTarget: 0, otbTarget: 0, oabTarget: 0, role: newRole, branch: newBranch }])
   }
 
   const removeKPIItem = (idx: number) => {
