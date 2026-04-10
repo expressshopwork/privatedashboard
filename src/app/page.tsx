@@ -277,50 +277,134 @@ export default function DashboardPage() {
 
       {/* Today's Breakdown */}
       {viewMode === 'unit' ? (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          {/* Unit Group */}
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-blue-500" />
-              Unit Group — Today
-            </h2>
-            <div className="space-y-3">
-              {UNIT_GROUP_ITEMS.map((item) => {
-                const val = unitSummary.unitGroup[item.name] ?? 0
-                return (
-                  <div key={item.name} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <span className="text-sm font-medium text-gray-700">{item.name}</span>
-                    <span className="text-sm font-bold text-blue-700">{val} units</span>
-                  </div>
-                )
-              })}
-              <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
-                <span className="text-sm font-semibold text-blue-800">Total</span>
-                <span className="text-sm font-bold text-blue-800">{unitSummary.totalUnits} units</span>
+        <div className="space-y-6">
+          {/* Unit Group & Dollar Group Lists */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            {/* Unit Group */}
+            <div className="bg-white rounded-xl shadow-sm p-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-blue-500" />
+                Unit Group — Today
+              </h2>
+              <div className="space-y-3">
+                {UNIT_GROUP_ITEMS.map((item) => {
+                  const val = unitSummary.unitGroup[item.name] ?? 0
+                  return (
+                    <div key={item.name} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <span className="text-sm font-medium text-gray-700">{item.name}</span>
+                      <span className="text-sm font-bold text-blue-700">{val} units</span>
+                    </div>
+                  )
+                })}
+                <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <span className="text-sm font-semibold text-blue-800">Total</span>
+                  <span className="text-sm font-bold text-blue-800">{unitSummary.totalUnits} units</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Dollar Group */}
+            <div className="bg-white rounded-xl shadow-sm p-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-green-500" />
+                Dollar Group — Today
+              </h2>
+              <div className="space-y-3">
+                {DOLLAR_GROUP_ITEMS.map((item) => {
+                  const val = unitSummary.dollarGroup[item.name] ?? 0
+                  return (
+                    <div key={item.name} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <span className="text-sm font-medium text-gray-700">{item.name}</span>
+                      <span className="text-sm font-bold text-green-700">${val.toFixed(2)}</span>
+                    </div>
+                  )
+                })}
+                <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200">
+                  <span className="text-sm font-semibold text-green-800">Total Revenue</span>
+                  <span className="text-sm font-bold text-green-800">${unitSummary.totalRevenue.toFixed(2)}</span>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Dollar Group */}
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-green-500" />
-              Dollar Group — Today
-            </h2>
-            <div className="space-y-3">
-              {DOLLAR_GROUP_ITEMS.map((item) => {
-                const val = unitSummary.dollarGroup[item.name] ?? 0
-                return (
-                  <div key={item.name} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <span className="text-sm font-medium text-gray-700">{item.name}</span>
-                    <span className="text-sm font-bold text-green-700">${val.toFixed(2)}</span>
-                  </div>
-                )
-              })}
-              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200">
-                <span className="text-sm font-semibold text-green-800">Total Revenue</span>
-                <span className="text-sm font-bold text-green-800">${unitSummary.totalRevenue.toFixed(2)}</span>
-              </div>
+          {/* Unit Group & Dollar Group Charts */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            {/* Unit Group Chart */}
+            <div className="bg-white rounded-xl shadow-sm p-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-blue-500" />
+                Unit Group Chart — Today
+              </h2>
+              {unitSummary.totalUnits === 0 ? (
+                <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
+                  No unit sales recorded today
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart
+                    data={UNIT_GROUP_ITEMS.map((item) => ({
+                      name: item.name,
+                      units: unitSummary.unitGroup[item.name] ?? 0,
+                    }))}
+                    layout="vertical"
+                    margin={{ left: 20 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis type="number" tick={{ fontSize: 12 }} />
+                    <YAxis
+                      dataKey="name"
+                      type="category"
+                      tick={{ fontSize: 11 }}
+                      width={100}
+                    />
+                    <Tooltip />
+                    <Bar dataKey="units" name="Units" radius={[0, 4, 4, 0]}>
+                      {UNIT_GROUP_ITEMS.map((_, index) => (
+                        <Cell key={`unit-cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+
+            {/* Dollar Group Chart */}
+            <div className="bg-white rounded-xl shadow-sm p-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-green-500" />
+                Dollar Group Chart — Today
+              </h2>
+              {unitSummary.totalRevenue === 0 ? (
+                <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
+                  No dollar sales recorded today
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart
+                    data={DOLLAR_GROUP_ITEMS.map((item) => ({
+                      name: item.name,
+                      revenue: unitSummary.dollarGroup[item.name] ?? 0,
+                    }))}
+                    layout="vertical"
+                    margin={{ left: 20 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis type="number" tick={{ fontSize: 12 }} />
+                    <YAxis
+                      dataKey="name"
+                      type="category"
+                      tick={{ fontSize: 11 }}
+                      width={100}
+                    />
+                    <Tooltip formatter={(value: number) => `$${value.toFixed(2)}`} />
+                    <Bar dataKey="revenue" name="Revenue ($)" radius={[0, 4, 4, 0]}>
+                      {DOLLAR_GROUP_ITEMS.map((_, index) => (
+                        <Cell key={`dollar-cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
         </div>
