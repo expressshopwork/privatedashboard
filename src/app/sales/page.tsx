@@ -228,7 +228,7 @@ export default function SalesPage() {
   const pointCategories = getPointCategories()
 
   const filteredSales = filterPhone.trim()
-    ? sales.filter((s) => s.notes?.toLowerCase().includes(`phone: ${filterPhone.trim().toLowerCase()}`))
+    ? sales.filter((s) => s.notes?.toLowerCase().includes(filterPhone.trim().toLowerCase()))
     : sales
 
   return (

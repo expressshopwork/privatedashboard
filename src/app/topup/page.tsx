@@ -135,7 +135,7 @@ export default function TopUpPage() {
         ) : filteredTopups.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-gray-400">
             <Zap size={40} className="mb-2 opacity-30" />
-            <p>No top-ups yet</p>
+            <p>{searchPhone.trim() ? 'No matching subscriptions found' : 'No top-ups yet'}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
