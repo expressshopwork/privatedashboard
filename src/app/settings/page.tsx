@@ -5,6 +5,7 @@ import { Save, Settings, Calendar, Plus, Trash2 } from 'lucide-react'
 import {
   getSettings,
   saveSettings,
+  getBranches,
   type KPISettings,
   type SIPPositionConfig,
   type NewSIPPositionConfig,
@@ -13,41 +14,29 @@ import {
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<KPISettings | null>(null)
-  const [form, setForm] = useState({
-    dailyUnitTarget: '',
-    dailyPointTarget: '',
-    monthlyRevenueTarget: '',
-    customerGrowthTarget: '',
-  })
   const [currentScheme, setCurrentScheme] = useState<SIPPositionConfig[]>([])
   const [newScheme, setNewScheme] = useState<NewSIPPositionConfig[]>([])
   const [kpiItems, setKpiItems] = useState<KPIItem[]>([])
   const [effectiveDate, setEffectiveDate] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [branches, setBranches] = useState<string[]>([])
+  const [selectedBranch, setSelectedBranch] = useState<string>('all')
+  const [selectedRole, setSelectedRole] = useState<'agent' | 'sup' | 'all'>('all')
 
   useEffect(() => {
     const data = getSettings()
     setSettings(data)
-    setForm({
-      dailyUnitTarget: String(data.dailyUnitTarget),
-      dailyPointTarget: String(data.dailyPointTarget),
-      monthlyRevenueTarget: String(data.monthlyRevenueTarget),
-      customerGrowthTarget: String(data.customerGrowthTarget),
-    })
     setCurrentScheme(data.currentScheme.map((r) => ({ ...r })))
     setNewScheme(data.newScheme.map((r) => ({ ...r })))
     setKpiItems(data.kpiItems.map((r) => ({ ...r })))
     setEffectiveDate(data.newSchemeEffectiveDate)
+    setBranches(getBranches())
   }, [])
 
   const handleSave = () => {
     setSaving(true)
     const updated = saveSettings({
-      dailyUnitTarget: parseFloat(form.dailyUnitTarget) || 0,
-      dailyPointTarget: parseFloat(form.dailyPointTarget) || 0,
-      monthlyRevenueTarget: parseFloat(form.monthlyRevenueTarget) || 0,
-      customerGrowthTarget: parseFloat(form.customerGrowthTarget) || 0,
       currentScheme,
       newScheme,
       newSchemeEffectiveDate: effectiveDate,
@@ -84,7 +73,9 @@ export default function SettingsPage() {
   }
 
   const addKPIItem = () => {
-    setKpiItems((prev) => [...prev, { name: '', weight: 0, gateTarget: 0, otbTarget: 0, oabTarget: 0 }])
+    const newRole = selectedRole === 'all' ? 'agent' : selectedRole
+    const newBranch = selectedBranch === 'all' ? '' : selectedBranch
+    setKpiItems((prev) => [...prev, { name: '', weight: 0, gateTarget: 0, otbTarget: 0, oabTarget: 0, role: newRole, branch: newBranch }])
   }
 
   const removeKPIItem = (idx: number) => {
@@ -99,54 +90,21 @@ export default function SettingsPage() {
     )
   }
 
-  const targetFields = [
-    { key: 'dailyUnitTarget' as const, label: 'Daily Sales Target (Units)', description: 'Target number of unit-based transactions per day', suffix: 'units' },
-    { key: 'dailyPointTarget' as const, label: 'Daily Sales Target (Points)', description: 'Target points to be earned per day', suffix: 'points' },
-    { key: 'monthlyRevenueTarget' as const, label: 'Monthly Revenue Target', description: 'Target total revenue for the month', suffix: '$' },
-    { key: 'customerGrowthTarget' as const, label: 'Customer Growth Target', description: 'Target number of new customers per month', suffix: 'customers' },
-  ]
+  // Filtered KPI items based on selected branch and role
+  const filteredKpiIndices: number[] = kpiItems
+    .map((item, idx) => ({ item, idx }))
+    .filter(({ item }) => {
+      if (selectedBranch !== 'all' && item.branch !== selectedBranch) return false
+      if (selectedRole !== 'all' && item.role !== selectedRole) return false
+      return true
+    })
+    .map(({ idx }) => idx)
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">KPI Settings</h1>
         <p className="text-gray-500 text-sm mt-1">Configure performance targets and SIP schemes for your shop</p>
-      </div>
-
-      {/* Target Configuration */}
-      <div className="bg-white rounded-xl shadow-sm p-6 space-y-6">
-        <div className="flex items-center gap-3 pb-4 border-b">
-          <div className="p-2 bg-slate-100 rounded-lg">
-            <Settings size={20} className="text-slate-600" />
-          </div>
-          <div>
-            <h2 className="font-semibold text-gray-900">Target Configuration</h2>
-            <p className="text-sm text-gray-500">Set your daily and monthly performance goals</p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {targetFields.map(({ key, label, description, suffix }) => (
-            <div key={key} className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">{label}</label>
-              <p className="text-xs text-gray-400">{description}</p>
-              <div className="relative mt-2">
-                <input
-                  type="number"
-                  value={form[key]}
-                  onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                  className="w-full border rounded-lg px-3 py-2 pr-16 focus:outline-none focus:ring-2 focus:ring-slate-300"
-                  placeholder="0"
-                  min="0"
-                  step={suffix === '$' ? '0.01' : '1'}
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">
-                  {suffix}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
       </div>
 
       {/* Current Scheme – Unit Based */}
@@ -201,7 +159,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* KPI Items – Unit Based Targets */}
+      {/* KPI Items – Unit Based Targets (by Branch & Role) */}
       <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
         <div className="flex items-center gap-3 pb-4 border-b">
           <div className="p-2 bg-orange-100 rounded-lg">
@@ -209,7 +167,7 @@ export default function SettingsPage() {
           </div>
           <div className="flex-1">
             <h2 className="font-semibold text-gray-900">KPI Performance Items</h2>
-            <p className="text-sm text-gray-500">Individual KPI definitions with weights and targets for unit-based scheme</p>
+            <p className="text-sm text-gray-500">Set KPI targets per role and branch (Shop Performance = Agent + Sup)</p>
           </div>
           <button
             onClick={addKPIItem}
@@ -220,12 +178,43 @@ export default function SettingsPage() {
           </button>
         </div>
 
+        {/* Branch & Role Filters */}
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-600">Branch:</label>
+            <select
+              value={selectedBranch}
+              onChange={(e) => setSelectedBranch(e.target.value)}
+              className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+            >
+              <option value="all">All Branches</option>
+              {branches.map((b) => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-600">Role:</label>
+            <select
+              value={selectedRole}
+              onChange={(e) => setSelectedRole(e.target.value as 'agent' | 'sup' | 'all')}
+              className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+            >
+              <option value="all">All Roles</option>
+              <option value="agent">Agent</option>
+              <option value="sup">Supervisor</option>
+            </select>
+          </div>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
               <tr className="bg-gray-50 text-left text-gray-600">
                 <th className="px-3 py-2 font-medium">No.</th>
                 <th className="px-3 py-2 font-medium">KPI Name</th>
+                <th className="px-3 py-2 font-medium">Role</th>
+                <th className="px-3 py-2 font-medium">Branch</th>
                 <th className="px-3 py-2 font-medium text-right">Weight (%)</th>
                 <th className="px-3 py-2 font-medium text-right">Gate Target</th>
                 <th className="px-3 py-2 font-medium text-right">OTB Target</th>
@@ -234,11 +223,22 @@ export default function SettingsPage() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {kpiItems.map((row, idx) => (
+              {filteredKpiIndices.map((idx, displayIdx) => {
+                const row = kpiItems[idx]
+                return (
                 <tr key={idx} className="hover:bg-gray-50">
-                  <td className="px-3 py-2 text-gray-500">{idx + 1}</td>
+                  <td className="px-3 py-2 text-gray-500">{displayIdx + 1}</td>
                   <td className="px-3 py-2">
                     <input type="text" value={row.name} onChange={(e) => updateKPIItem(idx, 'name', e.target.value)} className="w-48 border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-orange-300" placeholder="KPI name" />
+                  </td>
+                  <td className="px-3 py-2">
+                    <select value={row.role} onChange={(e) => updateKPIItem(idx, 'role', e.target.value)} className="border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300">
+                      <option value="agent">Agent</option>
+                      <option value="sup">Supervisor</option>
+                    </select>
+                  </td>
+                  <td className="px-3 py-2">
+                    <input type="text" value={row.branch} onChange={(e) => updateKPIItem(idx, 'branch', e.target.value)} className="w-28 border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-orange-300" placeholder="Branch" list="branch-list" />
                   </td>
                   <td className="px-3 py-2">
                     <input type="number" min="0" max="100" step="1" value={row.weight} onChange={(e) => updateKPIItem(idx, 'weight', parseFloat(e.target.value) || 0)} className="w-20 text-right border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-orange-300" />
@@ -258,20 +258,26 @@ export default function SettingsPage() {
                     </button>
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
-            {kpiItems.length > 0 && (
+            {filteredKpiIndices.length > 0 && (
               <tfoot>
                 <tr className="bg-gray-50 font-medium text-gray-700">
-                  <td className="px-3 py-2" colSpan={2}>Total Weight</td>
-                  <td className="px-3 py-2 text-right">{kpiItems.reduce((sum, r) => sum + r.weight, 0)}%</td>
+                  <td className="px-3 py-2" colSpan={4}>Total Weight</td>
+                  <td className="px-3 py-2 text-right">{filteredKpiIndices.reduce((sum, idx) => sum + kpiItems[idx].weight, 0)}%</td>
                   <td colSpan={4} />
                 </tr>
               </tfoot>
             )}
           </table>
+          <datalist id="branch-list">
+            {branches.map((b) => (
+              <option key={b} value={b} />
+            ))}
+          </datalist>
         </div>
-        <p className="text-xs text-gray-400">* Weights should sum to 100%. Staff is only allowed two KPIs to fail out of total KPIs (Mandatory).</p>
+        <p className="text-xs text-gray-400">* Weights should sum to 100% per role per branch. Staff is only allowed two KPIs to fail out of total KPIs (Mandatory).</p>
       </div>
 
       {/* New Scheme – Point Based */}

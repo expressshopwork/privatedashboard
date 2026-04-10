@@ -14,6 +14,7 @@ export interface AppUser {
   username: string
   password: string
   role: 'admin' | 'agent' | 'sup'
+  branch: string
   status: 'active' | 'inactive'
   createdAt: string
 }
@@ -30,6 +31,7 @@ function getDefaultAdmin(): AppUser {
     username: 'admin',
     password: 'admin123',
     role: 'admin',
+    branch: '',
     status: 'active',
     createdAt: new Date().toISOString(),
   }
@@ -42,6 +44,15 @@ export function getUsers(): AppUser[] {
     writeKey(USERS_KEY, [admin])
     return [admin]
   }
+  // Backward compatibility: ensure branch field exists
+  let needsWrite = false
+  for (const u of users) {
+    if (u.branch === undefined) {
+      (u as AppUser).branch = ''
+      needsWrite = true
+    }
+  }
+  if (needsWrite) writeKey(USERS_KEY, users)
   return users
 }
 
@@ -50,6 +61,7 @@ export function addUser(data: {
   username: string
   password: string
   role: 'admin' | 'agent' | 'sup'
+  branch: string
   status: 'active' | 'inactive'
 }): AppUser {
   const users = getUsers()
@@ -63,6 +75,7 @@ export function addUser(data: {
     username: data.username,
     password: data.password,
     role: data.role,
+    branch: data.branch,
     status: data.status,
     createdAt: new Date().toISOString(),
   }
@@ -78,6 +91,7 @@ export function updateUser(
     username: string
     password?: string
     role: 'admin' | 'agent' | 'sup'
+    branch: string
     status: 'active' | 'inactive'
   }
 ): AppUser {
@@ -93,6 +107,7 @@ export function updateUser(
     fullName: data.fullName,
     username: data.username,
     role: data.role,
+    branch: data.branch,
     status: data.status,
     ...(data.password ? { password: data.password } : {}),
   }
@@ -106,6 +121,16 @@ export function deleteUser(id: number): void {
     USERS_KEY,
     users.filter((u) => u.id !== id)
   )
+}
+
+/** Get unique branch names from all users */
+export function getBranches(): string[] {
+  const users = getUsers()
+  const branches = new Set<string>()
+  for (const u of users) {
+    if (u.branch) branches.add(u.branch)
+  }
+  return Array.from(branches).sort()
 }
 
 export function loginUser(username: string, password: string): AppUser | null {
@@ -329,14 +354,14 @@ export interface KPIItem {
   gateTarget: number
   otbTarget: number
   oabTarget: number
+  /** Role this KPI applies to */
+  role: 'agent' | 'sup'
+  /** Branch this KPI belongs to */
+  branch: string
 }
 
 export interface KPISettings {
   id: number
-  dailyUnitTarget: number
-  dailyPointTarget: number
-  monthlyRevenueTarget: number
-  customerGrowthTarget: number
   currentScheme: SIPPositionConfig[]
   newScheme: NewSIPPositionConfig[]
   newSchemeEffectiveDate: string
@@ -669,18 +694,18 @@ const DEFAULT_NEW_SCHEME: NewSIPPositionConfig[] = [
 ]
 
 const DEFAULT_KPI_ITEMS: KPIItem[] = [
-  { name: 'Gross Adds', weight: 30, gateTarget: 50, otbTarget: 65, oabTarget: 90 },
-  { name: 'Recharge', weight: 20, gateTarget: 500, otbTarget: 700, oabTarget: 800 },
-  { name: 'Smart@Home & Fiber+', weight: 25, gateTarget: 10, otbTarget: 15, oabTarget: 20 },
-  { name: 'Smart Nas Downloading/MAU', weight: 25, gateTarget: 20, otbTarget: 30, oabTarget: 40 },
+  { name: 'Gross Adds', weight: 30, gateTarget: 50, otbTarget: 65, oabTarget: 90, role: 'agent', branch: '' },
+  { name: 'Recharge', weight: 20, gateTarget: 500, otbTarget: 700, oabTarget: 800, role: 'agent', branch: '' },
+  { name: 'Smart@Home & Fiber+', weight: 25, gateTarget: 10, otbTarget: 15, oabTarget: 20, role: 'agent', branch: '' },
+  { name: 'Smart Nas Downloading/MAU', weight: 25, gateTarget: 20, otbTarget: 30, oabTarget: 40, role: 'agent', branch: '' },
+  { name: 'Gross Adds', weight: 30, gateTarget: 100, otbTarget: 130, oabTarget: 180, role: 'sup', branch: '' },
+  { name: 'Recharge', weight: 20, gateTarget: 1000, otbTarget: 1400, oabTarget: 1600, role: 'sup', branch: '' },
+  { name: 'Smart@Home & Fiber+', weight: 25, gateTarget: 20, otbTarget: 30, oabTarget: 40, role: 'sup', branch: '' },
+  { name: 'Smart Nas Downloading/MAU', weight: 25, gateTarget: 40, otbTarget: 60, oabTarget: 80, role: 'sup', branch: '' },
 ]
 
 const DEFAULT_SETTINGS: KPISettings = {
   id: 1,
-  dailyUnitTarget: 0,
-  dailyPointTarget: 0,
-  monthlyRevenueTarget: 0,
-  customerGrowthTarget: 0,
   currentScheme: DEFAULT_CURRENT_SCHEME,
   newScheme: DEFAULT_NEW_SCHEME,
   newSchemeEffectiveDate: '2026-04-01',
@@ -694,6 +719,12 @@ export function getSettings(): KPISettings {
   if (!stored.newScheme) stored.newScheme = DEFAULT_NEW_SCHEME
   if (!stored.newSchemeEffectiveDate) stored.newSchemeEffectiveDate = '2026-04-01'
   if (!stored.kpiItems) stored.kpiItems = DEFAULT_KPI_ITEMS
+  // Ensure KPI items have role and branch fields
+  stored.kpiItems = stored.kpiItems.map((item) => ({
+    ...item,
+    role: (item as Partial<KPIItem>).role ?? 'agent',
+    branch: (item as Partial<KPIItem>).branch ?? '',
+  }))
   // Ensure new scheme rows have point target fields
   stored.newScheme = stored.newScheme.map((row) => {
     const withDefaults: NewSIPPositionConfig = {
@@ -710,10 +741,6 @@ export function getSettings(): KPISettings {
 }
 
 export function saveSettings(data: {
-  dailyUnitTarget: number
-  dailyPointTarget: number
-  monthlyRevenueTarget: number
-  customerGrowthTarget: number
   currentScheme: SIPPositionConfig[]
   newScheme: NewSIPPositionConfig[]
   newSchemeEffectiveDate: string

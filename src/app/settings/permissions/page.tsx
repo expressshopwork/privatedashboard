@@ -10,6 +10,7 @@ type UserForm = {
   username: string
   password: string
   role: 'admin' | 'agent' | 'sup'
+  branch: string
   status: 'active' | 'inactive'
 }
 
@@ -18,6 +19,7 @@ const emptyForm: UserForm = {
   username: '',
   password: '',
   role: 'agent',
+  branch: '',
   status: 'active',
 }
 
@@ -67,6 +69,7 @@ export default function PermissionsPage() {
           username: form.username.trim(),
           password: form.password || undefined,
           role: form.role,
+          branch: form.branch.trim(),
           status: form.status,
         })
         setSuccess('User updated successfully')
@@ -76,6 +79,7 @@ export default function PermissionsPage() {
           username: form.username.trim(),
           password: form.password,
           role: form.role,
+          branch: form.branch.trim(),
           status: form.status,
         })
         setSuccess('User created successfully')
@@ -94,6 +98,7 @@ export default function PermissionsPage() {
       username: user.username,
       password: '',
       role: user.role,
+      branch: user.branch || '',
       status: user.status,
     })
     setEditingId(user.id)
@@ -215,6 +220,16 @@ export default function PermissionsPage() {
                 placeholder={editingId ? '••••••••' : 'Enter password'}
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Branch</label>
+              <input
+                type="text"
+                value={form.branch}
+                onChange={(e) => setForm({ ...form, branch: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                placeholder="Enter branch name"
+              />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Role</label>
@@ -263,6 +278,7 @@ export default function PermissionsPage() {
               <tr className="text-left text-gray-500 bg-gray-50 border-b">
                 <th className="px-6 py-3 font-medium">Full Name</th>
                 <th className="px-6 py-3 font-medium">Username</th>
+                <th className="px-6 py-3 font-medium">Branch</th>
                 <th className="px-6 py-3 font-medium">Role</th>
                 <th className="px-6 py-3 font-medium">Status</th>
                 <th className="px-6 py-3 font-medium text-right">Actions</th>
@@ -273,6 +289,7 @@ export default function PermissionsPage() {
                 <tr key={user.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 font-medium text-gray-900">{user.fullName}</td>
                   <td className="px-6 py-4 text-gray-600">{user.username}</td>
+                  <td className="px-6 py-4 text-gray-600">{user.branch || '–'}</td>
                   <td className="px-6 py-4">
                     <span className={`text-xs px-2.5 py-1 rounded-full font-medium capitalize ${roleColors[user.role] ?? ''}`}>
                       {user.role}
