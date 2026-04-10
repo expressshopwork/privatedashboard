@@ -282,6 +282,7 @@ export interface TopUp {
   customerPhone: string
   customerName: string
   product: string
+  amount: number
   lastTopUpDate: string
   paymentPeriod: number
   expireDate: string
@@ -535,6 +536,7 @@ export function addTopup(data: {
   customerPhone: string
   customerName: string
   product: string
+  amount: number
   lastTopUpDate: string
   paymentPeriod: number
   expireDate: string
@@ -547,6 +549,7 @@ export function addTopup(data: {
     customerPhone: data.customerPhone,
     customerName: data.customerName,
     product: data.product,
+    amount: data.amount,
     lastTopUpDate: new Date(data.lastTopUpDate).toISOString(),
     paymentPeriod: data.paymentPeriod,
     expireDate: new Date(data.expireDate).toISOString(),
@@ -564,6 +567,7 @@ export function updateTopup(
     customerPhone?: string
     customerName?: string
     product?: string
+    amount?: number
     lastTopUpDate?: string
     paymentPeriod?: number
     expireDate?: string
@@ -578,6 +582,7 @@ export function updateTopup(
     ...(data.customerPhone !== undefined ? { customerPhone: data.customerPhone } : {}),
     ...(data.customerName !== undefined ? { customerName: data.customerName } : {}),
     ...(data.product !== undefined ? { product: data.product } : {}),
+    ...(data.amount !== undefined ? { amount: data.amount } : {}),
     ...(data.lastTopUpDate !== undefined
       ? { lastTopUpDate: new Date(data.lastTopUpDate).toISOString() }
       : {}),

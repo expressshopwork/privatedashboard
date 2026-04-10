@@ -1,13 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, Trash2, Zap, Search } from 'lucide-react'
+import { Plus, Trash2, Zap, Search, Pencil } from 'lucide-react'
 import Modal from '@/components/Modal'
 import { format, addMonths, differenceInDays } from 'date-fns'
 import {
   getTopups,
   addTopup,
   deleteTopup,
+  updateTopup,
   getCurrentUser,
   type TopUp,
   TOPUP_PRODUCTS,
@@ -20,6 +21,7 @@ const emptyForm = {
   customerPhone: '',
   customerName: '',
   product: '',
+  amount: '',
   lastTopUpDate: todayStr(),
   paymentPeriod: '1',
 }
@@ -39,6 +41,7 @@ export default function TopUpPage() {
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
   const [searchPhone, setSearchPhone] = useState('')
+  const [editingId, setEditingId] = useState<number | null>(null)
 
   const currentUser = getCurrentUser()
 
@@ -63,20 +66,48 @@ export default function TopUpPage() {
   const handleSave = () => {
     setSaving(true)
     const expire = computedExpire()
-    addTopup({
-      customerId: form.customerId ? parseInt(form.customerId) : null,
-      customerPhone: form.customerPhone,
-      customerName: form.customerName,
-      product: form.product,
-      lastTopUpDate: form.lastTopUpDate,
-      paymentPeriod: parseInt(form.paymentPeriod),
-      expireDate: expire ? expire.toISOString() : new Date().toISOString(),
-      createdBy: currentUser?.fullName ?? '',
-    })
+    if (editingId !== null) {
+      updateTopup(editingId, {
+        customerPhone: form.customerPhone,
+        customerName: form.customerName,
+        product: form.product,
+        amount: parseFloat(form.amount) || 0,
+        lastTopUpDate: form.lastTopUpDate,
+        paymentPeriod: parseInt(form.paymentPeriod),
+        expireDate: expire ? expire.toISOString() : new Date().toISOString(),
+      })
+    } else {
+      addTopup({
+        customerId: form.customerId ? parseInt(form.customerId) : null,
+        customerPhone: form.customerPhone,
+        customerName: form.customerName,
+        product: form.product,
+        amount: parseFloat(form.amount) || 0,
+        lastTopUpDate: form.lastTopUpDate,
+        paymentPeriod: parseInt(form.paymentPeriod),
+        expireDate: expire ? expire.toISOString() : new Date().toISOString(),
+        createdBy: currentUser?.fullName ?? '',
+      })
+    }
     setSaving(false)
     setModalOpen(false)
+    setEditingId(null)
     setForm(emptyForm)
     fetchTopups()
+  }
+
+  const handleEdit = (t: TopUp) => {
+    setEditingId(t.id)
+    setForm({
+      customerId: t.customerId?.toString() ?? '',
+      customerPhone: t.customerPhone,
+      customerName: t.customerName,
+      product: t.product,
+      amount: (t.amount ?? 0).toString(),
+      lastTopUpDate: new Date(t.lastTopUpDate).toISOString().split('T')[0],
+      paymentPeriod: t.paymentPeriod.toString(),
+    })
+    setModalOpen(true)
   }
 
   const handleDelete = (id: number) => {
@@ -99,7 +130,7 @@ export default function TopUpPage() {
           <p className="text-gray-500 text-sm mt-1">{filteredTopups.length} subscriptions</p>
         </div>
         <button
-          onClick={() => { setForm(emptyForm); setModalOpen(true) }}
+          onClick={() => { setForm(emptyForm); setEditingId(null); setModalOpen(true) }}
           className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-700 transition-colors"
         >
           <Plus size={18} />
@@ -145,6 +176,7 @@ export default function TopUpPage() {
                   <th className="px-6 py-3 font-medium">Customer</th>
                   <th className="px-6 py-3 font-medium">Phone</th>
                   <th className="px-6 py-3 font-medium">Product</th>
+                  <th className="px-6 py-3 font-medium">Amount</th>
                   <th className="px-6 py-3 font-medium">Last Top Up</th>
                   <th className="px-6 py-3 font-medium">Period</th>
                   <th className="px-6 py-3 font-medium">Expire Date</th>
@@ -162,6 +194,7 @@ export default function TopUpPage() {
                       <td className="px-6 py-4 font-medium">{t.customerName}</td>
                       <td className="px-6 py-4 text-gray-600">{t.customerPhone}</td>
                       <td className="px-6 py-4 text-gray-700">{t.product}</td>
+                      <td className="px-6 py-4 text-gray-700">{t.amount != null ? t.amount : '—'}</td>
                       <td className="px-6 py-4 text-gray-500">{format(new Date(t.lastTopUpDate), 'MMM d, yyyy')}</td>
                       <td className="px-6 py-4 text-gray-500">{t.paymentPeriod} mo</td>
                       <td className="px-6 py-4 font-medium">{format(new Date(t.expireDate), 'MMM d, yyyy')}</td>
@@ -172,7 +205,10 @@ export default function TopUpPage() {
                       </td>
                       <td className="px-6 py-4 text-gray-500">{t.createdBy || '—'}</td>
                       <td className="px-6 py-4 text-gray-500">{format(new Date(t.createdAt), 'MMM d, yyyy')}</td>
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 flex items-center gap-1">
+                        <button onClick={() => handleEdit(t)} className="p-1 text-gray-400 hover:text-blue-600 transition-colors">
+                          <Pencil size={16} />
+                        </button>
                         <button onClick={() => handleDelete(t.id)} className="p-1 text-gray-400 hover:text-red-600 transition-colors">
                           <Trash2 size={16} />
                         </button>
@@ -186,7 +222,7 @@ export default function TopUpPage() {
         )}
       </div>
 
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Add Top Up">
+      <Modal isOpen={modalOpen} onClose={() => { setModalOpen(false); setEditingId(null) }} title={editingId !== null ? 'Edit Top Up' : 'Add Top Up'}>
         <div className="space-y-4">
           {/* Username (read-only, from login) */}
           <div>
@@ -234,6 +270,18 @@ export default function TopUpPage() {
             </select>
           </div>
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Amount *</label>
+            <input
+              type="number"
+              value={form.amount}
+              onChange={(e) => setForm({ ...form, amount: e.target.value })}
+              className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-300"
+              placeholder="e.g. 10.00"
+              min="0"
+              step="0.01"
+            />
+          </div>
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Last Top Up Date *</label>
             <input
               type="date"
@@ -260,15 +308,15 @@ export default function TopUpPage() {
             </div>
           )}
           <div className="flex justify-end gap-3 pt-2">
-            <button onClick={() => setModalOpen(false)} className="px-4 py-2 text-gray-600 border rounded-lg hover:bg-gray-50 transition-colors">
+            <button onClick={() => { setModalOpen(false); setEditingId(null) }} className="px-4 py-2 text-gray-600 border rounded-lg hover:bg-gray-50 transition-colors">
               Cancel
             </button>
             <button
               onClick={handleSave}
-              disabled={saving || !form.customerPhone || !form.customerName || !form.product}
+              disabled={saving || !form.customerPhone || !form.customerName || !form.product || !form.amount}
               className="px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50 transition-colors"
             >
-              {saving ? 'Saving...' : 'Save Top Up'}
+              {saving ? 'Saving...' : editingId !== null ? 'Update Top Up' : 'Save Top Up'}
             </button>
           </div>
         </div>
