@@ -10,7 +10,8 @@ export default function LayoutShell({ children }: { children: React.ReactNode })
   const router = useRouter()
   const [checked, setChecked] = useState(false)
 
-  const isLoginPage = pathname === '/login'
+  const normalizedPath = pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname
+  const isLoginPage = normalizedPath === '/login'
 
   useEffect(() => {
     const user = getCurrentUser()
