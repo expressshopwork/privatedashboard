@@ -1,17 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, Trash2, Zap } from 'lucide-react'
+import { Plus, Trash2, Zap, Search } from 'lucide-react'
 import Modal from '@/components/Modal'
 import { format, addMonths, differenceInDays } from 'date-fns'
 import {
   getTopups,
   addTopup,
   deleteTopup,
-  getCustomers,
   getCurrentUser,
   type TopUp,
-  type Customer,
   TOPUP_PRODUCTS,
 } from '@/lib/store'
 
@@ -36,11 +34,11 @@ function getStatus(expireDate: string) {
 
 export default function TopUpPage() {
   const [topups, setTopups] = useState<TopUp[]>([])
-  const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
+  const [searchPhone, setSearchPhone] = useState('')
 
   const currentUser = getCurrentUser()
 
@@ -58,23 +56,9 @@ export default function TopUpPage() {
     setLoading(false)
   }
 
-  const fetchCustomers = () => {
-    setCustomers(getCustomers())
-  }
-
   useEffect(() => {
     fetchTopups()
-    fetchCustomers()
   }, [])
-
-  const handleCustomerSelect = (id: string) => {
-    const c = customers.find((c) => String(c.id) === id)
-    if (c) {
-      setForm({ ...form, customerId: id, customerName: c.name, customerPhone: c.phone })
-    } else {
-      setForm({ ...form, customerId: '', customerName: '', customerPhone: '' })
-    }
-  }
 
   const handleSave = () => {
     setSaving(true)
@@ -103,12 +87,16 @@ export default function TopUpPage() {
 
   const expirePreview = computedExpire()
 
+  const filteredTopups = searchPhone.trim()
+    ? topups.filter((t) => t.customerPhone.toLowerCase().includes(searchPhone.trim().toLowerCase()))
+    : topups
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Top Up</h1>
-          <p className="text-gray-500 text-sm mt-1">{topups.length} subscriptions</p>
+          <p className="text-gray-500 text-sm mt-1">{filteredTopups.length} subscriptions</p>
         </div>
         <button
           onClick={() => { setForm(emptyForm); setModalOpen(true) }}
@@ -119,15 +107,35 @@ export default function TopUpPage() {
         </button>
       </div>
 
+      {/* Search */}
+      <div className="bg-white rounded-xl shadow-sm p-4 flex flex-wrap gap-4 items-center">
+        <Search size={16} className="text-gray-400" />
+        <input
+          type="text"
+          value={searchPhone}
+          onChange={(e) => setSearchPhone(e.target.value)}
+          className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+          placeholder="Search by phone"
+        />
+        {searchPhone && (
+          <button
+            onClick={() => setSearchPhone('')}
+            className="text-sm text-red-500 hover:text-red-700"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center h-48">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-800" />
           </div>
-        ) : topups.length === 0 ? (
+        ) : filteredTopups.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-gray-400">
             <Zap size={40} className="mb-2 opacity-30" />
-            <p>No top-ups yet</p>
+            <p>{searchPhone.trim() ? 'No matching subscriptions found' : 'No top-ups yet'}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -147,7 +155,7 @@ export default function TopUpPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {topups.map((t) => {
+                {filteredTopups.map((t) => {
                   const status = getStatus(t.expireDate)
                   return (
                     <tr key={t.id} className="hover:bg-gray-50">
@@ -189,19 +197,6 @@ export default function TopUpPage() {
               readOnly
               className="w-full border rounded-lg px-3 py-2 bg-gray-50 text-gray-600 focus:outline-none"
             />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Customer (optional)</label>
-            <select
-              value={form.customerId}
-              onChange={(e) => handleCustomerSelect(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-300"
-            >
-              <option value="">— Select customer —</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>
-              ))}
-            </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
