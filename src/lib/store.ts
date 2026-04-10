@@ -246,6 +246,16 @@ export interface Sale {
   createdAt: string
 }
 
+/** Predefined product options for top-up */
+export const TOPUP_PRODUCTS = [
+  'Smart@Home',
+  'Fiber+',
+  'M2M',
+  'Smart Laor Monthly',
+  'Data Tamchet Monthly',
+  'Hybrid+',
+] as const
+
 export interface TopUp {
   id: number
   customerId: number | null
@@ -255,6 +265,7 @@ export interface TopUp {
   lastTopUpDate: string
   paymentPeriod: number
   expireDate: string
+  createdBy: string
   createdAt: string
 }
 
@@ -268,6 +279,13 @@ export interface KPISettings {
 
 export interface WeeklyData {
   date: string
+  units: number
+  points: number
+  revenue: number
+}
+
+export interface MonthlyData {
+  month: string
   units: number
   points: number
   revenue: number
@@ -476,6 +494,7 @@ export function addTopup(data: {
   lastTopUpDate: string
   paymentPeriod: number
   expireDate: string
+  createdBy?: string
 }): TopUp {
   const topups = readRawTopups()
   const newTopup: TopUp = {
@@ -487,11 +506,45 @@ export function addTopup(data: {
     lastTopUpDate: new Date(data.lastTopUpDate).toISOString(),
     paymentPeriod: data.paymentPeriod,
     expireDate: new Date(data.expireDate).toISOString(),
+    createdBy: data.createdBy ?? '',
     createdAt: new Date().toISOString(),
   }
   topups.push(newTopup)
   writeKey(TOPUPS_KEY, topups)
   return newTopup
+}
+
+export function updateTopup(
+  id: number,
+  data: {
+    customerPhone?: string
+    customerName?: string
+    product?: string
+    lastTopUpDate?: string
+    paymentPeriod?: number
+    expireDate?: string
+    createdBy?: string
+  }
+): TopUp {
+  const topups = readRawTopups()
+  const idx = topups.findIndex((t) => t.id === id)
+  if (idx === -1) throw new Error('Top-up not found')
+  topups[idx] = {
+    ...topups[idx],
+    ...(data.customerPhone !== undefined ? { customerPhone: data.customerPhone } : {}),
+    ...(data.customerName !== undefined ? { customerName: data.customerName } : {}),
+    ...(data.product !== undefined ? { product: data.product } : {}),
+    ...(data.lastTopUpDate !== undefined
+      ? { lastTopUpDate: new Date(data.lastTopUpDate).toISOString() }
+      : {}),
+    ...(data.paymentPeriod !== undefined ? { paymentPeriod: data.paymentPeriod } : {}),
+    ...(data.expireDate !== undefined
+      ? { expireDate: new Date(data.expireDate).toISOString() }
+      : {}),
+    ...(data.createdBy !== undefined ? { createdBy: data.createdBy } : {}),
+  }
+  writeKey(TOPUPS_KEY, topups)
+  return topups[idx]
 }
 
 export function deleteTopup(id: number): void {
@@ -545,6 +598,11 @@ export interface PointDaySummary {
   totalPoints: number
 }
 
+export interface PointCategoryChartData {
+  category: string
+  points: number
+}
+
 export interface DashboardData {
   kpis: {
     salesToday: number
@@ -555,8 +613,10 @@ export interface DashboardData {
   recentSales: Sale[]
   expiringTopups: TopUp[]
   weeklyData: WeeklyData[]
+  monthlyData: MonthlyData[]
   unitSummaryToday: UnitDaySummary
   pointSummaryToday: PointDaySummary
+  pointCategoryChart: PointCategoryChartData[]
 }
 
 function buildUnitSummary(salesList: Sale[]): UnitDaySummary {
@@ -663,6 +723,42 @@ export function getDashboardData(): DashboardData {
     }
   }
 
+  // Monthly data (last 6 months)
+  const monthlyMap: Record<string, MonthlyData> = {}
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date()
+    d.setMonth(d.getMonth() - i)
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    monthlyMap[key] = { month: key, units: 0, points: 0, revenue: 0 }
+  }
+  for (const sale of sales) {
+    const sd = new Date(sale.date)
+    const key = `${sd.getFullYear()}-${String(sd.getMonth() + 1).padStart(2, '0')}`
+    if (monthlyMap[key]) {
+      monthlyMap[key].revenue += sale.totalAmount
+      if (sale.type === 'unit') {
+        monthlyMap[key].units += sale.quantity ?? 0
+      } else {
+        monthlyMap[key].points += sale.pointsEarned ?? 0
+      }
+    }
+  }
+
+  // Point category chart (today's points by main category)
+  const pointCategoryMap: Record<string, number> = {}
+  for (const cat of getPointCategories()) {
+    pointCategoryMap[cat] = 0
+  }
+  for (const s of salesTodayList) {
+    if (s.type !== 'point' || !s.category) continue
+    if (s.category in pointCategoryMap) {
+      pointCategoryMap[s.category] += s.pointsEarned ?? 0
+    }
+  }
+  const pointCategoryChart: PointCategoryChartData[] = Object.entries(pointCategoryMap).map(
+    ([category, points]) => ({ category, points })
+  )
+
   return {
     kpis: {
       salesToday: salesTodayList.length,
@@ -673,7 +769,9 @@ export function getDashboardData(): DashboardData {
     recentSales,
     expiringTopups,
     weeklyData: Object.values(weeklyMap),
+    monthlyData: Object.values(monthlyMap),
     unitSummaryToday: buildUnitSummary(salesTodayList),
     pointSummaryToday: buildPointSummary(salesTodayList),
+    pointCategoryChart,
   }
 }
