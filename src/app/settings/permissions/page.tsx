@@ -55,7 +55,7 @@ export default function PermissionsPage() {
       return
     }
 
-    if (!editingId && !form.password.trim()) {
+    if (!editingId && !form.password) {
       setError('Password is required for new users')
       return
     }
@@ -65,7 +65,7 @@ export default function PermissionsPage() {
         updateUser(editingId, {
           fullName: form.fullName.trim(),
           username: form.username.trim(),
-          password: form.password.trim() || undefined,
+          password: form.password || undefined,
           role: form.role,
           status: form.status,
         })
@@ -74,7 +74,7 @@ export default function PermissionsPage() {
         addUser({
           fullName: form.fullName.trim(),
           username: form.username.trim(),
-          password: form.password.trim(),
+          password: form.password,
           role: form.role,
           status: form.status,
         })
