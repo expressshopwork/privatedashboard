@@ -21,8 +21,15 @@ import {
   getDashboardData,
   getCurrentUser,
   updateTopup,
+  getKPIs,
+  getUsers,
+  getBranches,
+  computeKPIAchievement,
+  getSales,
   type DashboardData,
   type TopUp,
+  type KPIRecord,
+  type AppUser,
   UNIT_GROUP_ITEMS,
   DOLLAR_GROUP_ITEMS,
   TOPUP_PRODUCTS,
@@ -87,6 +94,53 @@ function KPICard({
 
 const todayStr = () => new Date().toISOString().split('T')[0]
 
+function describeArc(cx: number, cy: number, r: number, startAngle: number, endAngle: number): string {
+  const startRad = (Math.PI / 180) * startAngle
+  const endRad = (Math.PI / 180) * endAngle
+  const x1 = cx + r * Math.cos(startRad)
+  const y1 = cy - r * Math.sin(startRad)
+  const x2 = cx + r * Math.cos(endRad)
+  const y2 = cy - r * Math.sin(endRad)
+  const largeArc = endAngle - startAngle > 180 ? 1 : 0
+  return `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 0 ${x2} ${y2}`
+}
+
+function HalfGauge({ percentage, label, sublabel }: { percentage: number; label: string; sublabel?: string }) {
+  const clamped = Math.min(Math.max(percentage, 0), 100)
+  const color = clamped < 50 ? '#ef4444' : clamped < 100 ? '#f59e0b' : '#10b981'
+  const fillAngle = 180 + (clamped / 100) * 180
+  const bgPath = describeArc(50, 50, 40, 0, 180)
+  const fillPath = clamped > 0 ? describeArc(50, 50, 40, 180, fillAngle) : ''
+  return (
+    <div className="flex flex-col items-center">
+      <svg viewBox="0 10 100 50" className="w-32 h-16">
+        <path d={bgPath} fill="none" stroke="#e5e7eb" strokeWidth={8} strokeLinecap="round" />
+        {clamped > 0 && (
+          <path d={fillPath} fill="none" stroke={color} strokeWidth={8} strokeLinecap="round" />
+        )}
+        <text x="50" y="50" textAnchor="middle" fontSize="14" fontWeight="bold" fill={color}>
+          {Math.round(percentage)}%
+        </text>
+      </svg>
+      <p className="text-xs font-semibold text-gray-700 mt-1 text-center leading-tight">{label}</p>
+      {sublabel && (
+        <span className="text-[10px] mt-0.5 px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">
+          {sublabel}
+        </span>
+      )}
+    </div>
+  )
+}
+
+interface KPIComputedRow {
+  kpi: KPIRecord
+  actual: number
+  target: number
+  achievementPct: number
+  tier: 'oab' | 'otb' | 'gate' | 'min' | 'below'
+  assigneeName: string
+}
+
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -104,6 +158,12 @@ export default function DashboardPage() {
   })
   const [saving, setSaving] = useState(false)
 
+  // KPI Performance section state
+  const currentMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+  const [selectedKpiMonth, setSelectedKpiMonth] = useState(currentMonth)
+  const [selectedKpiBranch, setSelectedKpiBranch] = useState('all')
+  const [kpiData, setKpiData] = useState<KPIComputedRow[]>([])
+
   const currentUser = getCurrentUser()
 
   const reload = () => {
@@ -118,6 +178,49 @@ export default function DashboardPage() {
     reload()
     setLoading(false)
   }, [])
+
+  // Load KPI data when filters change
+  useEffect(() => {
+    if (!currentUser) return
+    try {
+      const allUsers = getUsers()
+      const allKpis = getKPIs({ month: selectedKpiMonth })
+      const [year, month] = selectedKpiMonth.split('-')
+      const monthStart = `${year}-${month}-01`
+      const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate()
+      const monthEnd = `${year}-${month}-${String(lastDay).padStart(2, '0')}`
+      const sales = getSales({ from: monthStart, to: monthEnd })
+
+      let visibleKpis: KPIRecord[]
+      if (currentUser.role === 'admin') {
+        if (selectedKpiBranch === 'all') {
+          visibleKpis = allKpis
+        } else {
+          const branchUserIds = new Set(allUsers.filter((u) => u.branch === selectedKpiBranch).map((u) => u.id))
+          visibleKpis = allKpis.filter((k) => branchUserIds.has(k.assigneeId))
+        }
+      } else if (currentUser.role === 'sup') {
+        const branchUserIds = new Set(allUsers.filter((u) => u.branch === currentUser.branch).map((u) => u.id))
+        visibleKpis = allKpis.filter((k) => k.assigneeType === 'shop' && branchUserIds.has(k.assigneeId))
+      } else {
+        // agent: own agent KPIs + shop KPIs for their branch
+        const branchUserIds = new Set(allUsers.filter((u) => u.branch === currentUser.branch).map((u) => u.id))
+        visibleKpis = allKpis.filter(
+          (k) => (k.assigneeType === 'agent' && k.assigneeId === currentUser.id) ||
+                 (k.assigneeType === 'shop' && branchUserIds.has(k.assigneeId))
+        )
+      }
+
+      const rows: KPIComputedRow[] = visibleKpis.map((kpi) => {
+        const result = computeKPIAchievement(kpi, sales, allUsers)
+        const assignee = allUsers.find((u) => u.id === kpi.assigneeId)
+        return { kpi, ...result, assigneeName: assignee?.fullName ?? 'Unknown' }
+      })
+      setKpiData(rows)
+    } catch {
+      setKpiData([])
+    }
+  }, [selectedKpiMonth, selectedKpiBranch, currentUser])
 
   if (loading) {
     return (
@@ -297,6 +400,123 @@ export default function DashboardPage() {
           />
         </div>
       )}
+
+      {/* KPI Performance Section */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+          <h2 className="text-lg font-semibold text-gray-900">KPI Performance</h2>
+          <div className="flex items-center gap-3">
+            <select
+              value={selectedKpiMonth}
+              onChange={(e) => setSelectedKpiMonth(e.target.value)}
+              className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+            >
+              {Array.from({ length: 12 }, (_, i) => {
+                const d = new Date()
+                d.setDate(1)
+                d.setMonth(d.getMonth() - i)
+                const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+                return (
+                  <option key={val} value={val}>
+                    {format(d, 'MMM yyyy')}
+                  </option>
+                )
+              })}
+            </select>
+            {currentUser?.role === 'admin' && (
+              <select
+                value={selectedKpiBranch}
+                onChange={(e) => setSelectedKpiBranch(e.target.value)}
+                className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+              >
+                <option value="all">All Branches</option>
+                {getBranches().map((b) => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+            )}
+          </div>
+        </div>
+
+        {kpiData.length === 0 ? (
+          <p className="text-gray-400 text-sm text-center py-8">No KPIs found for this period</p>
+        ) : (
+          <>
+            {/* Gauge Charts Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6 mb-8">
+              {kpiData.map((row) => (
+                <HalfGauge
+                  key={row.kpi.id}
+                  percentage={row.achievementPct}
+                  label={row.kpi.name}
+                  sublabel={row.kpi.mode === 'volume' ? 'Volume' : 'Point'}
+                />
+              ))}
+            </div>
+
+            {/* Summary Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-gray-500 border-b">
+                    <th className="pb-3 font-medium">KPI Name</th>
+                    <th className="pb-3 font-medium">Mode</th>
+                    <th className="pb-3 font-medium">Assignee</th>
+                    <th className="pb-3 font-medium text-right">Target</th>
+                    <th className="pb-3 font-medium text-right">Actual</th>
+                    <th className="pb-3 font-medium text-right">Achievement</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {kpiData.map((row) => {
+                    const pctColor =
+                      row.achievementPct >= 100
+                        ? 'bg-green-100 text-green-700'
+                        : row.achievementPct >= 50
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-red-100 text-red-700'
+                    return (
+                      <tr key={row.kpi.id} className="hover:bg-gray-50">
+                        <td className="py-3 font-medium text-gray-900">{row.kpi.name}</td>
+                        <td className="py-3">
+                          <span
+                            className={`text-xs px-2 py-1 rounded-full font-medium ${
+                              row.kpi.mode === 'volume'
+                                ? 'bg-blue-100 text-blue-700'
+                                : 'bg-purple-100 text-purple-700'
+                            }`}
+                          >
+                            {row.kpi.mode === 'volume' ? 'Volume' : 'Point'}
+                          </span>
+                        </td>
+                        <td className="py-3">
+                          <span
+                            className={`text-xs px-2 py-1 rounded-full font-medium ${
+                              row.kpi.assigneeType === 'shop'
+                                ? 'bg-indigo-100 text-indigo-700'
+                                : 'bg-teal-100 text-teal-700'
+                            }`}
+                          >
+                            {row.kpi.assigneeType === 'shop' ? 'Shop' : 'Agent'}
+                          </span>
+                          <span className="ml-1 text-xs text-gray-500">{row.assigneeName}</span>
+                        </td>
+                        <td className="py-3 text-right text-gray-600">{row.target}</td>
+                        <td className="py-3 text-right text-gray-900 font-medium">{Number(row.actual.toFixed(2))}</td>
+                        <td className="py-3 text-right">
+                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${pctColor}`}>
+                            {row.achievementPct.toFixed(1)}%
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Today's Breakdown */}
       {viewMode === 'unit' ? (
