@@ -245,7 +245,7 @@ export default function SaleTrackingPage() {
               </div>
               {failedCount > maxAllowedFail && (
                 <span className="text-xs bg-red-100 text-red-700 px-3 py-1 rounded-full font-semibold">
-                  ⚠ {failedCount} KPIs failed (max {maxAllowedFail} allowed)
+                  ⚠ Payment forfeited: {failedCount} KPIs failed (max {maxAllowedFail} failures allowed)
                 </span>
               )}
             </div>
