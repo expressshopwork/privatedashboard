@@ -290,12 +290,40 @@ export interface TopUp {
   createdAt: string
 }
 
+/** SIP position config for the Current (Unit-based) scheme */
+export interface SIPPositionConfig {
+  position: string
+  department: string
+  grouping: string
+  payoutMethod: string
+  gate: number
+  otb: number
+  oab: number
+  annualBonus: number
+}
+
+/** SIP position config for the New (Point-based) scheme */
+export interface NewSIPPositionConfig {
+  position: string
+  department: string
+  grouping: string
+  payoutMethod: string
+  gate: number
+  otb: number
+  oab: number
+  annualBonus: number
+  paAllowance: number
+}
+
 export interface KPISettings {
   id: number
   dailyUnitTarget: number
   dailyPointTarget: number
   monthlyRevenueTarget: number
   customerGrowthTarget: number
+  currentScheme: SIPPositionConfig[]
+  newScheme: NewSIPPositionConfig[]
+  newSchemeEffectiveDate: string
 }
 
 export interface WeeklyData {
@@ -608,16 +636,38 @@ export function deleteTopup(id: number): void {
 // KPI Settings
 // ---------------------------------------------------------------------------
 
+const DEFAULT_CURRENT_SCHEME: SIPPositionConfig[] = [
+  { position: 'Assistant Smart Shop Supervisor', department: 'B2C Management', grouping: 'Store Supervisor', payoutMethod: 'Monthly', gate: 75, otb: 150, oab: 200, annualBonus: 25 },
+  { position: 'Smart Shop Supervisor', department: 'B2C Management', grouping: 'Store Supervisor', payoutMethod: 'Monthly', gate: 75, otb: 150, oab: 200, annualBonus: 25 },
+  { position: 'Front Office Agent', department: 'B2C Management', grouping: 'Frontline', payoutMethod: 'Monthly', gate: 50, otb: 75, oab: 100, annualBonus: 25 },
+  { position: 'Front Office Agent Intern', department: 'B2C Management', grouping: 'Frontline', payoutMethod: 'Monthly', gate: 50, otb: 75, oab: 100, annualBonus: 0 },
+]
+
+const DEFAULT_NEW_SCHEME: NewSIPPositionConfig[] = [
+  { position: 'Assistant Smart Shop Supervisor', department: 'B2C Management', grouping: 'Store Supervisor', payoutMethod: 'Monthly', gate: 140, otb: 190, oab: 230, annualBonus: 0, paAllowance: 0 },
+  { position: 'Smart Shop Supervisor', department: 'B2C Management', grouping: 'Store Supervisor', payoutMethod: 'Monthly', gate: 140, otb: 190, oab: 230, annualBonus: 0, paAllowance: 0 },
+  { position: 'Front Office Agent', department: 'B2C Management', grouping: 'Frontline', payoutMethod: 'Monthly', gate: 65, otb: 80, oab: 105, annualBonus: 0, paAllowance: 0 },
+  { position: 'Front Office Agent Intern', department: 'B2C Management', grouping: 'Frontline', payoutMethod: 'Monthly', gate: 65, otb: 80, oab: 105, annualBonus: 0, paAllowance: 0 },
+]
+
 const DEFAULT_SETTINGS: KPISettings = {
   id: 1,
   dailyUnitTarget: 0,
   dailyPointTarget: 0,
   monthlyRevenueTarget: 0,
   customerGrowthTarget: 0,
+  currentScheme: DEFAULT_CURRENT_SCHEME,
+  newScheme: DEFAULT_NEW_SCHEME,
+  newSchemeEffectiveDate: '2026-04-01',
 }
 
 export function getSettings(): KPISettings {
-  return readKey<KPISettings>(SETTINGS_KEY, DEFAULT_SETTINGS)
+  const stored = readKey<KPISettings>(SETTINGS_KEY, DEFAULT_SETTINGS)
+  // Ensure backward compatibility – add scheme fields if missing
+  if (!stored.currentScheme) stored.currentScheme = DEFAULT_CURRENT_SCHEME
+  if (!stored.newScheme) stored.newScheme = DEFAULT_NEW_SCHEME
+  if (!stored.newSchemeEffectiveDate) stored.newSchemeEffectiveDate = '2026-04-01'
+  return stored
 }
 
 export function saveSettings(data: {
@@ -625,6 +675,9 @@ export function saveSettings(data: {
   dailyPointTarget: number
   monthlyRevenueTarget: number
   customerGrowthTarget: number
+  currentScheme: SIPPositionConfig[]
+  newScheme: NewSIPPositionConfig[]
+  newSchemeEffectiveDate: string
 }): KPISettings {
   const settings: KPISettings = { id: 1, ...data }
   writeKey(SETTINGS_KEY, settings)
