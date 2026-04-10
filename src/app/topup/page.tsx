@@ -313,7 +313,7 @@ export default function TopUpPage() {
             </button>
             <button
               onClick={handleSave}
-              disabled={saving || !form.customerPhone || !form.customerName || !form.product}
+              disabled={saving || !form.customerPhone || !form.customerName || !form.product || !form.amount}
               className="px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50 transition-colors"
             >
               {saving ? 'Saving...' : editingId !== null ? 'Update Top Up' : 'Save Top Up'}
