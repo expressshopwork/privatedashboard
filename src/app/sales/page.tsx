@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Trash2, ShoppingCart, Filter, Pencil } from 'lucide-react'
+import { Plus, Trash2, ShoppingCart, Filter, Pencil, Search } from 'lucide-react'
 import Modal from '@/components/Modal'
 import { format } from 'date-fns'
 import {
@@ -29,6 +29,7 @@ export default function SalesPage() {
   const [filterType, setFilterType] = useState('')
   const [filterFrom, setFilterFrom] = useState('')
   const [filterTo, setFilterTo] = useState('')
+  const [filterPhone, setFilterPhone] = useState('')
   const currentUser = getCurrentUser()
 
   // Form state
@@ -226,12 +227,16 @@ export default function SalesPage() {
 
   const pointCategories = getPointCategories()
 
+  const filteredSales = filterPhone.trim()
+    ? sales.filter((s) => s.notes?.toLowerCase().includes(`phone: ${filterPhone.trim().toLowerCase()}`))
+    : sales
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Daily Sales</h1>
-          <p className="text-gray-500 text-sm mt-1">{sales.length} records</p>
+          <p className="text-gray-500 text-sm mt-1">{filteredSales.length} records</p>
         </div>
         <button
           onClick={() => { resetForm(); setModalOpen(true) }}
@@ -245,6 +250,16 @@ export default function SalesPage() {
       {/* Filters */}
       <div className="bg-white rounded-xl shadow-sm p-4 flex flex-wrap gap-4 items-center">
         <Filter size={16} className="text-gray-400" />
+        <div className="flex items-center gap-2 text-sm text-gray-600">
+          <Search size={14} className="text-gray-400" />
+          <input
+            type="text"
+            value={filterPhone}
+            onChange={(e) => setFilterPhone(e.target.value)}
+            className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+            placeholder="Search by phone"
+          />
+        </div>
         <select
           value={filterType}
           onChange={(e) => setFilterType(e.target.value)}
@@ -272,9 +287,9 @@ export default function SalesPage() {
             className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
           />
         </div>
-        {(filterType || filterFrom || filterTo) && (
+        {(filterType || filterFrom || filterTo || filterPhone) && (
           <button
-            onClick={() => { setFilterType(''); setFilterFrom(''); setFilterTo('') }}
+            onClick={() => { setFilterType(''); setFilterFrom(''); setFilterTo(''); setFilterPhone('') }}
             className="text-sm text-red-500 hover:text-red-700"
           >
             Clear
@@ -288,7 +303,7 @@ export default function SalesPage() {
           <div className="flex items-center justify-center h-48">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-800" />
           </div>
-        ) : sales.length === 0 ? (
+        ) : filteredSales.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-gray-400">
             <ShoppingCart size={40} className="mb-2 opacity-30" />
             <p>No sales found</p>
@@ -308,7 +323,7 @@ export default function SalesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {sales.map((s) => (
+              {filteredSales.map((s) => (
                 <tr key={s.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 font-medium">{s.serviceName ?? '—'}</td>
                   <td className="px-6 py-4 text-gray-600">{s.category ?? '—'}</td>
