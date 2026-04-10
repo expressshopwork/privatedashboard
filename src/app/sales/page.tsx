@@ -1,13 +1,14 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Trash2, ShoppingCart, Filter } from 'lucide-react'
+import { Plus, Trash2, ShoppingCart, Filter, Pencil } from 'lucide-react'
 import Modal from '@/components/Modal'
 import { format } from 'date-fns'
 import {
   getSales,
   addSale,
   deleteSale,
+  updateSale,
   getCurrentUser,
   type Sale,
   UNIT_GROUP_ITEMS,
@@ -34,6 +35,19 @@ export default function SalesPage() {
   const [formMode, setFormMode] = useState<SaleMode>('unit')
   const [formDate, setFormDate] = useState(todayStr())
   const [formNotes, setFormNotes] = useState('')
+  const [formUser, setFormUser] = useState('')
+  const [formPhone, setFormPhone] = useState('')
+
+  // Edit modal state
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [editingSale, setEditingSale] = useState<Sale | null>(null)
+  const [editForm, setEditForm] = useState({
+    quantity: '',
+    totalAmount: '',
+    pointsEarned: '',
+    date: '',
+    notes: '',
+  })
 
   // Unit-based form: quantities for unit group, amounts for dollar group
   const [unitGroupValues, setUnitGroupValues] = useState<Record<string, string>>({})
@@ -45,6 +59,8 @@ export default function SalesPage() {
   const resetForm = useCallback(() => {
     setFormDate(todayStr())
     setFormNotes('')
+    setFormUser('')
+    setFormPhone('')
     const ugv: Record<string, string> = {}
     for (const item of UNIT_GROUP_ITEMS) ugv[item.name] = ''
     setUnitGroupValues(ugv)
@@ -98,6 +114,13 @@ export default function SalesPage() {
 
   const handleSave = () => {
     setSaving(true)
+    // Build combined notes with user/phone info
+    const noteParts: string[] = []
+    if (formUser.trim()) noteParts.push(`User: ${formUser.trim()}`)
+    if (formPhone.trim()) noteParts.push(`Phone: ${formPhone.trim()}`)
+    if (formNotes.trim()) noteParts.push(formNotes.trim())
+    const combinedNotes = noteParts.length > 0 ? noteParts.join(' | ') : null
+
     try {
       if (formMode === 'unit') {
         // Save unit group items
@@ -111,7 +134,7 @@ export default function SalesPage() {
               quantity: qty,
               totalAmount: 0,
               date: formDate,
-              notes: formNotes || null,
+              notes: combinedNotes,
               createdBy: currentUser?.fullName ?? '',
             })
           }
@@ -127,7 +150,7 @@ export default function SalesPage() {
               quantity: 1,
               totalAmount: amt,
               date: formDate,
-              notes: formNotes || null,
+              notes: combinedNotes,
               createdBy: currentUser?.fullName ?? '',
             })
           }
@@ -146,7 +169,7 @@ export default function SalesPage() {
               totalAmount: 0,
               pointsEarned: pts,
               date: formDate,
-              notes: formNotes || null,
+              notes: combinedNotes,
               createdBy: currentUser?.fullName ?? '',
             })
           }
@@ -163,6 +186,43 @@ export default function SalesPage() {
   const handleDelete = (id: number) => {
     if (!confirm('Delete this sale?')) return
     deleteSale(id)
+    fetchSales()
+  }
+
+  const openEditModal = (sale: Sale) => {
+    setEditingSale(sale)
+    setEditForm({
+      quantity: String(sale.quantity ?? ''),
+      totalAmount: String(sale.totalAmount ?? ''),
+      pointsEarned: String(sale.pointsEarned ?? ''),
+      date: sale.date ? new Date(sale.date).toISOString().split('T')[0] : todayStr(),
+      notes: sale.notes ?? '',
+    })
+    setEditModalOpen(true)
+  }
+
+  const handleEditSave = () => {
+    if (!editingSale) return
+    setSaving(true)
+    try {
+      updateSale(editingSale.id, {
+        quantity: editingSale.type === 'unit' && editingSale.category !== 'Dollar Group'
+          ? parseInt(editForm.quantity) || 0
+          : editingSale.quantity,
+        totalAmount: editingSale.category === 'Dollar Group'
+          ? parseFloat(editForm.totalAmount) || 0
+          : editingSale.totalAmount,
+        pointsEarned: editingSale.type === 'point'
+          ? parseInt(editForm.pointsEarned) || 0
+          : editingSale.pointsEarned,
+        date: editForm.date,
+        notes: editForm.notes || null,
+      })
+    } finally {
+      setSaving(false)
+    }
+    setEditModalOpen(false)
+    setEditingSale(null)
     fetchSales()
   }
 
@@ -270,9 +330,14 @@ export default function SalesPage() {
                   <td className="px-6 py-4 text-gray-500">{format(new Date(s.date), 'MMM d, yyyy')}</td>
                   <td className="px-6 py-4 text-gray-500 max-w-xs truncate">{s.notes ?? '—'}</td>
                   <td className="px-6 py-4">
-                    <button onClick={() => handleDelete(s.id)} className="p-1 text-gray-400 hover:text-red-600 transition-colors">
-                      <Trash2 size={16} />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => openEditModal(s)} className="p-1 text-gray-400 hover:text-blue-600 transition-colors" title="Edit">
+                        <Pencil size={16} />
+                      </button>
+                      <button onClick={() => handleDelete(s.id)} className="p-1 text-gray-400 hover:text-red-600 transition-colors" title="Delete">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -310,6 +375,30 @@ export default function SalesPage() {
               onChange={(e) => setFormDate(e.target.value)}
               className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-300"
             />
+          </div>
+
+          {/* User & Phone */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">User</label>
+              <input
+                type="text"
+                value={formUser}
+                onChange={(e) => setFormUser(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                placeholder="Customer name"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+              <input
+                type="text"
+                value={formPhone}
+                onChange={(e) => setFormPhone(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                placeholder="Phone number"
+              />
+            </div>
           </div>
 
           {formMode === 'unit' ? (
@@ -450,6 +539,110 @@ export default function SalesPage() {
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* Edit Sale Modal */}
+      <Modal isOpen={editModalOpen} onClose={() => { setEditModalOpen(false); setEditingSale(null) }} title="Edit Sale">
+        {editingSale && (
+          <div className="space-y-4">
+            <div className="bg-gray-50 rounded-lg px-4 py-3 text-sm">
+              <p className="font-medium text-gray-800">{editingSale.serviceName ?? '—'}</p>
+              <p className="text-gray-500 text-xs mt-0.5">{editingSale.category ?? '—'} · {editingSale.type === 'unit' ? 'Unit Based' : 'Point Based'}</p>
+            </div>
+
+            {/* Editable value field */}
+            {editingSale.type === 'unit' && editingSale.category !== 'Dollar Group' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                <input
+                  type="number"
+                  value={editForm.quantity}
+                  onChange={(e) => setEditForm({ ...editForm, quantity: e.target.value })}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  min="0"
+                />
+              </div>
+            )}
+
+            {editingSale.category === 'Dollar Group' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Amount ($)</label>
+                <input
+                  type="number"
+                  value={editForm.totalAmount}
+                  onChange={(e) => setEditForm({ ...editForm, totalAmount: e.target.value })}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  step="0.01"
+                  min="0"
+                />
+              </div>
+            )}
+
+            {editingSale.type === 'point' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                  <input
+                    type="number"
+                    value={editForm.quantity}
+                    onChange={(e) => setEditForm({ ...editForm, quantity: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                    min="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Points Earned</label>
+                  <input
+                    type="number"
+                    value={editForm.pointsEarned}
+                    onChange={(e) => setEditForm({ ...editForm, pointsEarned: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                    min="0"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Date */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+              <input
+                type="date"
+                value={editForm.date}
+                onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+              />
+            </div>
+
+            {/* Notes */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+              <textarea
+                value={editForm.notes}
+                onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                rows={2}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 resize-none"
+                placeholder="Optional notes..."
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => { setEditModalOpen(false); setEditingSale(null) }}
+                className="px-4 py-2 text-gray-600 border rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEditSave}
+                disabled={saving}
+                className="px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50 transition-colors"
+              >
+                {saving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   )

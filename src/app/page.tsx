@@ -14,7 +14,7 @@ import {
   Pie,
   Cell,
 } from 'recharts'
-import { ShoppingBag, DollarSign, Zap, TrendingUp, TrendingDown, Star, RefreshCw } from 'lucide-react'
+import { ShoppingBag, DollarSign, Zap, TrendingUp, TrendingDown, Star, RefreshCw, ChevronDown } from 'lucide-react'
 import { format, addMonths } from 'date-fns'
 import Modal from '@/components/Modal'
 import {
@@ -92,6 +92,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<ViewMode>('point')
   const [chartRange, setChartRange] = useState<ChartRange>('weekly')
+  const [showAllExpiring, setShowAllExpiring] = useState(false)
 
   // Update Payment modal state
   const [updateModalOpen, setUpdateModalOpen] = useState(false)
@@ -431,63 +432,119 @@ export default function DashboardPage() {
           </div>
         </div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full bg-purple-500" />
-            Points by Category — Today
-          </h2>
-          {data.pointCategoryChart.every((c) => c.points === 0) ? (
-            <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
-              No point sales recorded today
-            </div>
-          ) : (
-            <div className="flex flex-col lg:flex-row items-center justify-center gap-8">
-              <ResponsiveContainer width="100%" height={320}>
-                <PieChart>
-                  <Pie
-                    data={data.pointCategoryChart.filter((c) => c.points > 0)}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={70}
-                    outerRadius={120}
-                    paddingAngle={4}
-                    dataKey="points"
-                    nameKey="category"
-                    label={({ x, y, category, percent }) => (
-                      <text
-                        x={x}
-                        y={y}
-                        fill="#374151"
-                        fontSize={12}
-                        fontWeight={600}
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        stroke="#fff"
-                        strokeWidth={3}
-                        paintOrder="stroke"
-                      >
-                        {`${category} ${(percent * 100).toFixed(0)}%`}
-                      </text>
-                    )}
-                    labelLine={true}
+        /* Point mode: Points by Category + Weekly Sales side by side */
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-purple-500" />
+              Points by Category — Today
+            </h2>
+            {data.pointCategoryChart.every((c) => c.points === 0) ? (
+              <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
+                No point sales recorded today
+              </div>
+            ) : (
+              <div className="flex flex-col lg:flex-row items-center justify-center gap-8">
+                <ResponsiveContainer width="100%" height={320}>
+                  <PieChart>
+                    <Pie
+                      data={data.pointCategoryChart.filter((c) => c.points > 0)}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={70}
+                      outerRadius={120}
+                      paddingAngle={4}
+                      dataKey="points"
+                      nameKey="category"
+                      label={({ x, y, category, percent }) => (
+                        <text
+                          x={x}
+                          y={y}
+                          fill="#374151"
+                          fontSize={12}
+                          fontWeight={600}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          stroke="#fff"
+                          strokeWidth={3}
+                          paintOrder="stroke"
+                        >
+                          {`${category} ${(percent * 100).toFixed(0)}%`}
+                        </text>
+                      )}
+                      labelLine={true}
+                    >
+                      {data.pointCategoryChart
+                        .filter((c) => c.points > 0)
+                        .map((_, index) => (
+                          <Cell key={`doughnut-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                        ))}
+                    </Pie>
+                    <Tooltip formatter={(value: number) => `${value} pts`} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          {/* Weekly/Monthly Sales Chart */}
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <TrendingUp size={20} className="text-slate-600" />
+                <h2 className="text-lg font-semibold text-gray-900">
+                  {chartRange === 'weekly' ? 'Weekly Sales' : 'Monthly Sales'}
+                </h2>
+              </div>
+              <div className="flex bg-gray-100 rounded-lg p-1">
+                {(['weekly', 'monthly'] as const).map((range) => (
+                  <button
+                    key={range}
+                    onClick={() => setChartRange(range)}
+                    className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                      chartRange === range
+                        ? 'bg-slate-800 text-white shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
                   >
-                    {data.pointCategoryChart
-                      .filter((c) => c.points > 0)
-                      .map((_, index) => (
-                        <Cell key={`doughnut-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                      ))}
-                  </Pie>
-                  <Tooltip formatter={(value: number) => `${value} pts`} />
-                </PieChart>
-              </ResponsiveContainer>
+                    {range === 'weekly' ? 'Weekly' : 'Monthly'}
+                  </button>
+                ))}
+              </div>
             </div>
-          )}
+            <div className="flex flex-wrap gap-4 mb-4 px-1">
+              {chartRange === 'weekly' ? (
+                <>
+                  <GrowthBadge current={data.weeklyComparison.thisWeekUnits} previous={data.weeklyComparison.lastWeekUnits} label="Units vs last week" />
+                  <GrowthBadge current={data.weeklyComparison.thisWeekPoints} previous={data.weeklyComparison.lastWeekPoints} label="Points vs last week" />
+                  <GrowthBadge current={data.weeklyComparison.thisWeekRevenue} previous={data.weeklyComparison.lastWeekRevenue} label="Revenue vs last week" />
+                </>
+              ) : (
+                <>
+                  <GrowthBadge current={data.monthlyComparison.thisMonthUnits} previous={data.monthlyComparison.lastMonthUnits} label="Units vs last month" />
+                  <GrowthBadge current={data.monthlyComparison.thisMonthPoints} previous={data.monthlyComparison.lastMonthPoints} label="Points vs last month" />
+                  <GrowthBadge current={data.monthlyComparison.thisMonthRevenue} previous={data.monthlyComparison.lastMonthRevenue} label="Revenue vs last month" />
+                </>
+              )}
+            </div>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={chartRange === 'weekly' ? weeklyChartData : monthlyChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey={chartRange === 'weekly' ? 'date' : 'month'} tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="units" fill="#3b82f6" name="Units" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="points" fill="#8b5cf6" name="Points" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       )}
 
-      {/* Sales Chart + Expiring Top-ups */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2 bg-white rounded-xl shadow-sm p-6">
+      {/* Sales Chart (full width, unit mode only) */}
+      {viewMode === 'unit' && (
+        <div className="bg-white rounded-xl shadow-sm p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <TrendingUp size={20} className="text-slate-600" />
@@ -495,7 +552,6 @@ export default function DashboardPage() {
                 {chartRange === 'weekly' ? 'Weekly Sales' : 'Monthly Sales'}
               </h2>
             </div>
-            {/* Weekly / Monthly Toggle */}
             <div className="flex bg-gray-100 rounded-lg p-1">
               {(['weekly', 'monthly'] as const).map((range) => (
                 <button
@@ -512,7 +568,6 @@ export default function DashboardPage() {
               ))}
             </div>
           </div>
-          {/* Growth indicators */}
           <div className="flex flex-wrap gap-4 mb-4 px-1">
             {chartRange === 'weekly' ? (
               <>
@@ -529,14 +584,9 @@ export default function DashboardPage() {
             )}
           </div>
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart
-              data={chartRange === 'weekly' ? weeklyChartData : monthlyChartData}
-            >
+            <BarChart data={chartRange === 'weekly' ? weeklyChartData : monthlyChartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis
-                dataKey={chartRange === 'weekly' ? 'date' : 'month'}
-                tick={{ fontSize: 12 }}
-              />
+              <XAxis dataKey={chartRange === 'weekly' ? 'date' : 'month'} tick={{ fontSize: 12 }} />
               <YAxis tick={{ fontSize: 12 }} />
               <Tooltip />
               <Legend />
@@ -545,22 +595,30 @@ export default function DashboardPage() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+      )}
 
-        <div className="bg-white rounded-xl shadow-sm p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Zap size={20} className="text-amber-500" />
-            <h2 className="text-lg font-semibold text-gray-900">Expiring Soon</h2>
-            <span className="text-xs text-gray-400 ml-1">(next 7 days)</span>
-          </div>
-          {data.expiringTopups.length === 0 ? (
-            <p className="text-gray-400 text-sm text-center py-8">No expiring top-ups</p>
-          ) : (
-            <div className="space-y-3">
-              {data.expiringTopups.map((t) => {
+      {/* Expiring Soon — Full width */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Zap size={20} className="text-amber-500" />
+          <h2 className="text-lg font-semibold text-gray-900">Expiring Soon</h2>
+          <span className="text-xs text-gray-400 ml-1">(next 7 days)</span>
+          {data.expiringTopups.length > 0 && (
+            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium ml-auto">
+              {data.expiringTopups.length} total
+            </span>
+          )}
+        </div>
+        {data.expiringTopups.length === 0 ? (
+          <p className="text-gray-400 text-sm text-center py-8">No expiring top-ups</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              {(showAllExpiring ? data.expiringTopups : data.expiringTopups.slice(0, 5)).map((t) => {
                 const status = getTopupStatus(t.expireDate)
                 return (
-                  <div key={t.id} className="p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center justify-between">
+                  <div key={t.id} className="p-4 bg-gray-50 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
                       <div>
                         <p className="text-sm font-medium text-gray-900">{t.customerName}</p>
                         <p className="text-xs text-gray-500">{t.product}</p>
@@ -569,9 +627,12 @@ export default function DashboardPage() {
                         {status.label}
                       </span>
                     </div>
+                    <p className="text-xs text-gray-400 mb-2">
+                      Expires: {format(new Date(t.expireDate), 'MMM d, yyyy')}
+                    </p>
                     <button
                       onClick={() => openUpdateModal(t)}
-                      className="mt-2 w-full flex items-center justify-center gap-1 text-xs font-medium text-white bg-amber-500 hover:bg-amber-600 rounded-lg px-3 py-1.5 transition-colors"
+                      className="w-full flex items-center justify-center gap-1 text-xs font-medium text-white bg-amber-500 hover:bg-amber-600 rounded-lg px-3 py-1.5 transition-colors"
                     >
                       <RefreshCw size={12} />
                       Update Payment
@@ -580,8 +641,29 @@ export default function DashboardPage() {
                 )
               })}
             </div>
-          )}
-        </div>
+            {data.expiringTopups.length > 5 && !showAllExpiring && (
+              <div className="flex justify-center mt-4">
+                <button
+                  onClick={() => setShowAllExpiring(true)}
+                  className="flex items-center gap-1 text-sm font-medium text-amber-600 hover:text-amber-700 transition-colors"
+                >
+                  <ChevronDown size={16} />
+                  Show More ({data.expiringTopups.length - 5} more)
+                </button>
+              </div>
+            )}
+            {showAllExpiring && data.expiringTopups.length > 5 && (
+              <div className="flex justify-center mt-4">
+                <button
+                  onClick={() => setShowAllExpiring(false)}
+                  className="flex items-center gap-1 text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors"
+                >
+                  Show Less
+                </button>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* Recent Transactions */}

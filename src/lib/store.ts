@@ -20,6 +20,8 @@ export interface AppUser {
 
 const USERS_KEY = 'pd_users'
 const CURRENT_USER_KEY = 'pd_current_user'
+const SESSION_TIMESTAMP_KEY = 'pd_session_timestamp'
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
 
 function getDefaultAdmin(): AppUser {
   return {
@@ -117,15 +119,32 @@ export function loginUser(username: string, password: string): AppUser | null {
   if (!user) return null
   const sessionUser = { ...user }
   writeKey(CURRENT_USER_KEY, sessionUser)
+  touchSession()
   return sessionUser
 }
 
 export function logoutUser(): void {
-  if (isBrowser) localStorage.removeItem(CURRENT_USER_KEY)
+  if (isBrowser) {
+    localStorage.removeItem(CURRENT_USER_KEY)
+    localStorage.removeItem(SESSION_TIMESTAMP_KEY)
+  }
 }
 
 export function getCurrentUser(): AppUser | null {
   return readKey<AppUser | null>(CURRENT_USER_KEY, null)
+}
+
+/** Update the session activity timestamp to now */
+export function touchSession(): void {
+  if (isBrowser) localStorage.setItem(SESSION_TIMESTAMP_KEY, Date.now().toString())
+}
+
+/** Check if the session has expired (30 minutes of inactivity) */
+export function isSessionExpired(): boolean {
+  if (!isBrowser) return false
+  const ts = localStorage.getItem(SESSION_TIMESTAMP_KEY)
+  if (!ts) return true
+  return Date.now() - parseInt(ts, 10) > SESSION_TIMEOUT_MS
 }
 
 function readKey<T>(key: string, fallback: T): T {
@@ -467,6 +486,43 @@ export function deleteSale(id: number): void {
   )
 }
 
+export function updateSale(
+  id: number,
+  data: {
+    type?: string
+    serviceName?: string | null
+    category?: string | null
+    quantity?: number | null
+    unitPrice?: number | null
+    totalAmount?: number
+    pointsEarned?: number | null
+    date?: string
+    notes?: string | null
+    createdBy?: string
+    customerName?: string | null
+    customerPhone?: string | null
+  }
+): Sale {
+  const sales = readRawSales()
+  const idx = sales.findIndex((s) => s.id === id)
+  if (idx === -1) throw new Error('Sale not found')
+  sales[idx] = {
+    ...sales[idx],
+    ...(data.type !== undefined ? { type: data.type } : {}),
+    ...(data.serviceName !== undefined ? { serviceName: data.serviceName } : {}),
+    ...(data.category !== undefined ? { category: data.category } : {}),
+    ...(data.quantity !== undefined ? { quantity: data.quantity } : {}),
+    ...(data.unitPrice !== undefined ? { unitPrice: data.unitPrice } : {}),
+    ...(data.totalAmount !== undefined ? { totalAmount: data.totalAmount } : {}),
+    ...(data.pointsEarned !== undefined ? { pointsEarned: data.pointsEarned } : {}),
+    ...(data.date !== undefined ? { date: new Date(data.date).toISOString() } : {}),
+    ...(data.notes !== undefined ? { notes: data.notes } : {}),
+    ...(data.createdBy !== undefined ? { createdBy: data.createdBy } : {}),
+  }
+  writeKey(SALES_KEY, sales)
+  return sales[idx]
+}
+
 // ---------------------------------------------------------------------------
 // Top-ups
 // ---------------------------------------------------------------------------
@@ -706,7 +762,6 @@ export function getDashboardData(): DashboardData {
       (t) => new Date(t.expireDate) >= now && new Date(t.expireDate) <= sevenDaysFromNow
     )
     .sort((a, b) => new Date(a.expireDate).getTime() - new Date(b.expireDate).getTime())
-    .slice(0, 5)
 
   // Weekly data (last 7 days)
   const weeklyMap: Record<string, WeeklyData> = {}
