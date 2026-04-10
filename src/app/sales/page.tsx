@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Plus, Trash2, ShoppingCart, Filter } from 'lucide-react'
 import Modal from '@/components/Modal'
 import { format } from 'date-fns'
@@ -8,37 +8,53 @@ import {
   getSales,
   addSale,
   deleteSale,
-  getCustomers,
   type Sale,
-  type Customer,
+  UNIT_GROUP_ITEMS,
+  DOLLAR_GROUP_ITEMS,
+  POINT_BASED_ITEMS,
+  getPointCategories,
 } from '@/lib/store'
 
 const todayStr = () => new Date().toISOString().split('T')[0]
 
-const emptyForm = {
-  customerId: '',
-  type: 'unit',
-  quantity: '',
-  unitPrice: '',
-  totalAmount: '',
-  pointsEarned: '',
-  amountSpent: '',
-  date: todayStr(),
-  notes: '',
-}
+type SaleMode = 'unit' | 'point'
 
 export default function SalesPage() {
   const [sales, setSales] = useState<Sale[]>([])
-  const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
-  const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
   const [filterType, setFilterType] = useState('')
   const [filterFrom, setFilterFrom] = useState('')
   const [filterTo, setFilterTo] = useState('')
 
-  const fetchSales = () => {
+  // Form state
+  const [formMode, setFormMode] = useState<SaleMode>('unit')
+  const [formDate, setFormDate] = useState(todayStr())
+  const [formNotes, setFormNotes] = useState('')
+
+  // Unit-based form: quantities for unit group, amounts for dollar group
+  const [unitGroupValues, setUnitGroupValues] = useState<Record<string, string>>({})
+  const [dollarGroupValues, setDollarGroupValues] = useState<Record<string, string>>({})
+
+  // Point-based form: quantities for each service
+  const [pointValues, setPointValues] = useState<Record<string, string>>({})
+
+  const resetForm = useCallback(() => {
+    setFormDate(todayStr())
+    setFormNotes('')
+    const ugv: Record<string, string> = {}
+    for (const item of UNIT_GROUP_ITEMS) ugv[item.name] = ''
+    setUnitGroupValues(ugv)
+    const dgv: Record<string, string> = {}
+    for (const item of DOLLAR_GROUP_ITEMS) dgv[item.name] = ''
+    setDollarGroupValues(dgv)
+    const pv: Record<string, string> = {}
+    for (const item of POINT_BASED_ITEMS) pv[item.name] = ''
+    setPointValues(pv)
+  }, [])
+
+  const fetchSales = useCallback(() => {
     setLoading(true)
     setSales(
       getSales({
@@ -48,47 +64,94 @@ export default function SalesPage() {
       })
     )
     setLoading(false)
-  }
-
-  const fetchCustomers = () => {
-    setCustomers(getCustomers())
-  }
+  }, [filterType, filterFrom, filterTo])
 
   useEffect(() => {
     fetchSales()
-    fetchCustomers()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterType, filterFrom, filterTo])
+  }, [fetchSales])
 
-  const handleTypeChange = (type: string) => {
-    setForm({ ...form, type, quantity: '', unitPrice: '', totalAmount: '', pointsEarned: '', amountSpent: '' })
+  useEffect(() => {
+    resetForm()
+  }, [resetForm])
+
+  // Computed: total revenue from dollar group
+  const dollarGroupTotal = Object.values(dollarGroupValues).reduce(
+    (sum, v) => sum + (parseFloat(v) || 0),
+    0
+  )
+
+  // Computed: total points
+  const computeItemPoints = (itemName: string, qty: number) => {
+    const def = POINT_BASED_ITEMS.find((i) => i.name === itemName)
+    if (!def) return 0
+    let pts = qty * (def.pointMultiplier ?? 0)
+    if (qty > 0 && def.bonusPoints) pts += def.bonusPoints
+    return pts
   }
 
-  const handleUnitCalc = (field: string, value: string) => {
-    const updated = { ...form, [field]: value }
-    const qty = parseFloat(field === 'quantity' ? value : form.quantity)
-    const price = parseFloat(field === 'unitPrice' ? value : form.unitPrice)
-    if (!isNaN(qty) && !isNaN(price)) {
-      updated.totalAmount = (qty * price).toFixed(2)
-    }
-    setForm(updated)
-  }
+  const totalPoints = Object.entries(pointValues).reduce(
+    (sum, [name, v]) => sum + computeItemPoints(name, parseInt(v) || 0),
+    0
+  )
 
   const handleSave = () => {
     setSaving(true)
-    addSale({
-      customerId: form.customerId ? parseInt(form.customerId) : null,
-      type: form.type,
-      quantity: form.type === 'unit' && form.quantity ? parseFloat(form.quantity) : null,
-      unitPrice: form.type === 'unit' && form.unitPrice ? parseFloat(form.unitPrice) : null,
-      totalAmount: parseFloat(form.type === 'unit' ? form.totalAmount : form.amountSpent),
-      pointsEarned: form.type === 'point' && form.pointsEarned ? parseFloat(form.pointsEarned) : null,
-      date: form.date,
-      notes: form.notes || null,
-    })
-    setSaving(false)
+    try {
+      if (formMode === 'unit') {
+        // Save unit group items
+        for (const item of UNIT_GROUP_ITEMS) {
+          const qty = parseInt(unitGroupValues[item.name]) || 0
+          if (qty > 0) {
+            addSale({
+              type: 'unit',
+              serviceName: item.name,
+              category: item.category,
+              quantity: qty,
+              totalAmount: 0,
+              date: formDate,
+              notes: formNotes || null,
+            })
+          }
+        }
+        // Save dollar group items
+        for (const item of DOLLAR_GROUP_ITEMS) {
+          const amt = parseFloat(dollarGroupValues[item.name]) || 0
+          if (amt > 0) {
+            addSale({
+              type: 'unit',
+              serviceName: item.name,
+              category: item.category,
+              quantity: 1,
+              totalAmount: amt,
+              date: formDate,
+              notes: formNotes || null,
+            })
+          }
+        }
+      } else {
+        // Save point-based items
+        for (const item of POINT_BASED_ITEMS) {
+          const qty = parseInt(pointValues[item.name]) || 0
+          if (qty > 0) {
+            const pts = computeItemPoints(item.name, qty)
+            addSale({
+              type: 'point',
+              serviceName: item.name,
+              category: item.category,
+              quantity: qty,
+              totalAmount: 0,
+              pointsEarned: pts,
+              date: formDate,
+              notes: formNotes || null,
+            })
+          }
+        }
+      }
+    } finally {
+      setSaving(false)
+    }
     setModalOpen(false)
-    setForm(emptyForm)
+    resetForm()
     fetchSales()
   }
 
@@ -98,6 +161,8 @@ export default function SalesPage() {
     fetchSales()
   }
 
+  const pointCategories = getPointCategories()
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -106,7 +171,7 @@ export default function SalesPage() {
           <p className="text-gray-500 text-sm mt-1">{sales.length} records</p>
         </div>
         <button
-          onClick={() => { setForm(emptyForm); setModalOpen(true) }}
+          onClick={() => { resetForm(); setModalOpen(true) }}
           className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-700 transition-colors"
         >
           <Plus size={18} />
@@ -169,10 +234,10 @@ export default function SalesPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr className="text-left text-gray-500">
-                <th className="px-6 py-3 font-medium">Customer</th>
+                <th className="px-6 py-3 font-medium">Service</th>
+                <th className="px-6 py-3 font-medium">Category</th>
                 <th className="px-6 py-3 font-medium">Type</th>
                 <th className="px-6 py-3 font-medium">Details</th>
-                <th className="px-6 py-3 font-medium">Amount</th>
                 <th className="px-6 py-3 font-medium">Date</th>
                 <th className="px-6 py-3 font-medium">Notes</th>
                 <th className="px-6 py-3 font-medium">Actions</th>
@@ -181,7 +246,8 @@ export default function SalesPage() {
             <tbody className="divide-y divide-gray-50">
               {sales.map((s) => (
                 <tr key={s.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 font-medium">{s.customer?.name ?? '—'}</td>
+                  <td className="px-6 py-4 font-medium">{s.serviceName ?? '—'}</td>
+                  <td className="px-6 py-4 text-gray-600">{s.category ?? '—'}</td>
                   <td className="px-6 py-4">
                     <span className={`text-xs px-2 py-1 rounded-full font-medium ${
                       s.type === 'unit' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
@@ -191,10 +257,11 @@ export default function SalesPage() {
                   </td>
                   <td className="px-6 py-4 text-gray-600">
                     {s.type === 'unit'
-                      ? `${s.quantity ?? 0} × $${s.unitPrice?.toFixed(2) ?? '0'}`
-                      : `${s.pointsEarned ?? 0} pts`}
+                      ? s.category === 'Dollar Group'
+                        ? `$${s.totalAmount.toFixed(2)}`
+                        : `${s.quantity ?? 0} units`
+                      : `${s.quantity ?? 0} qty → ${s.pointsEarned ?? 0} pts`}
                   </td>
-                  <td className="px-6 py-4 font-medium">${s.totalAmount.toFixed(2)}</td>
                   <td className="px-6 py-4 text-gray-500">{format(new Date(s.date), 'MMM d, yyyy')}</td>
                   <td className="px-6 py-4 text-gray-500 max-w-xs truncate">{s.notes ?? '—'}</td>
                   <td className="px-6 py-4">
@@ -209,30 +276,18 @@ export default function SalesPage() {
         )}
       </div>
 
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Add Sale">
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Add Daily Sale">
         <div className="space-y-4">
+          {/* Mode toggle */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
-            <select
-              value={form.customerId}
-              onChange={(e) => setForm({ ...form, customerId: e.target.value })}
-              className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-300"
-            >
-              <option value="">— Walk-in customer —</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Transaction Type</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Sale Type</label>
             <div className="flex gap-3">
-              {['unit', 'point'].map((t) => (
+              {(['unit', 'point'] as const).map((t) => (
                 <button
                   key={t}
-                  onClick={() => handleTypeChange(t)}
+                  onClick={() => setFormMode(t)}
                   className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${
-                    form.type === t ? 'bg-slate-800 text-white border-slate-800' : 'text-gray-600 hover:bg-gray-50'
+                    formMode === t ? 'bg-slate-800 text-white border-slate-800' : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
                   {t === 'unit' ? 'Unit Based' : 'Point Based'}
@@ -241,92 +296,142 @@ export default function SalesPage() {
             </div>
           </div>
 
-          {form.type === 'unit' ? (
-            <>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
-                  <input
-                    type="number"
-                    value={form.quantity}
-                    onChange={(e) => handleUnitCalc('quantity', e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-300"
-                    placeholder="0"
-                    min="0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit Price</label>
-                  <input
-                    type="number"
-                    value={form.unitPrice}
-                    onChange={(e) => handleUnitCalc('unitPrice', e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-300"
-                    placeholder="0.00"
-                    step="0.01"
-                    min="0"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Total Amount</label>
-                <input
-                  type="number"
-                  value={form.totalAmount}
-                  onChange={(e) => setForm({ ...form, totalAmount: e.target.value })}
-                  className="w-full border rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-slate-300"
-                  placeholder="Auto-calculated"
-                  step="0.01"
-                />
-              </div>
-            </>
-          ) : (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Points Earned</label>
-                <input
-                  type="number"
-                  value={form.pointsEarned}
-                  onChange={(e) => setForm({ ...form, pointsEarned: e.target.value })}
-                  className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-300"
-                  placeholder="0"
-                  min="0"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Amount Spent</label>
-                <input
-                  type="number"
-                  value={form.amountSpent}
-                  onChange={(e) => setForm({ ...form, amountSpent: e.target.value })}
-                  className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-300"
-                  placeholder="0.00"
-                  step="0.01"
-                  min="0"
-                />
-              </div>
-            </>
-          )}
-
+          {/* Date */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
             <input
               type="date"
-              value={form.date}
-              onChange={(e) => setForm({ ...form, date: e.target.value })}
+              value={formDate}
+              onChange={(e) => setFormDate(e.target.value)}
               className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-300"
             />
           </div>
+
+          {formMode === 'unit' ? (
+            <>
+              {/* Unit Group */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-blue-500" />
+                  Unit Group
+                </h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {UNIT_GROUP_ITEMS.map((item) => (
+                    <div key={item.name}>
+                      <label className="block text-xs text-gray-600 mb-1">{item.name}</label>
+                      <input
+                        type="number"
+                        value={unitGroupValues[item.name] ?? ''}
+                        onChange={(e) =>
+                          setUnitGroupValues({ ...unitGroupValues, [item.name]: e.target.value })
+                        }
+                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                        placeholder="0"
+                        min="0"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Dollar Group */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-green-500" />
+                  Dollar Group
+                </h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {DOLLAR_GROUP_ITEMS.map((item) => (
+                    <div key={item.name}>
+                      <label className="block text-xs text-gray-600 mb-1">{item.name}</label>
+                      <input
+                        type="number"
+                        value={dollarGroupValues[item.name] ?? ''}
+                        onChange={(e) =>
+                          setDollarGroupValues({ ...dollarGroupValues, [item.name]: e.target.value })
+                        }
+                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                        placeholder="$0.00"
+                        step="0.01"
+                        min="0"
+                      />
+                    </div>
+                  ))}
+                </div>
+                {/* Total Revenue */}
+                <div className="mt-3 bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm flex justify-between items-center">
+                  <span className="font-medium text-green-800">Total Revenue</span>
+                  <span className="font-bold text-green-700">${dollarGroupTotal.toFixed(2)}</span>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Point Based - grouped by category */}
+              {pointCategories.map((cat) => {
+                const items = POINT_BASED_ITEMS.filter((i) => i.category === cat)
+                return (
+                  <div key={cat}>
+                    <h3 className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-purple-500" />
+                      {cat}
+                    </h3>
+                    <div className="space-y-2">
+                      {items.map((item) => {
+                        const qty = parseInt(pointValues[item.name]) || 0
+                        const pts = computeItemPoints(item.name, qty)
+                        const multiplierLabel =
+                          item.bonusPoints
+                            ? `×${item.pointMultiplier ?? 0} +${item.bonusPoints} pts`
+                            : `×${item.pointMultiplier ?? 0} pts`
+                        return (
+                          <div key={item.name} className="flex items-center gap-3">
+                            <div className="flex-1">
+                              <span className="text-xs text-gray-600">
+                                {item.name}{' '}
+                                <span className="text-gray-400">({multiplierLabel})</span>
+                              </span>
+                            </div>
+                            <input
+                              type="number"
+                              value={pointValues[item.name] ?? ''}
+                              onChange={(e) =>
+                                setPointValues({ ...pointValues, [item.name]: e.target.value })
+                              }
+                              className="w-20 border rounded-lg px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-slate-300"
+                              placeholder="0"
+                              min="0"
+                            />
+                            <span className="text-xs text-purple-600 w-14 text-right font-medium">
+                              {pts > 0 ? `${pts} pts` : '—'}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+              {/* Total Points */}
+              <div className="bg-purple-50 border border-purple-200 rounded-lg px-4 py-3 text-sm flex justify-between items-center">
+                <span className="font-medium text-purple-800">Total Points</span>
+                <span className="font-bold text-purple-700">{totalPoints} pts</span>
+              </div>
+            </>
+          )}
+
+          {/* Notes */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
             <textarea
-              value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              value={formNotes}
+              onChange={(e) => setFormNotes(e.target.value)}
               rows={2}
               className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-300 resize-none"
               placeholder="Optional notes..."
             />
           </div>
+
           <div className="flex justify-end gap-3 pt-2">
             <button onClick={() => setModalOpen(false)} className="px-4 py-2 text-gray-600 border rounded-lg hover:bg-gray-50 transition-colors">
               Cancel

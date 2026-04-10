@@ -2,11 +2,10 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Users, ShoppingCart, Zap, Settings } from 'lucide-react'
+import { LayoutDashboard, ShoppingCart, Zap, Settings } from 'lucide-react'
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/customers', label: 'Customers', icon: Users },
   { href: '/sales', label: 'Daily Sales', icon: ShoppingCart },
   { href: '/topup', label: 'Top Up', icon: Zap },
   { href: '/settings', label: 'KPI Settings', icon: Settings },
