@@ -45,7 +45,7 @@ export default function Sidebar() {
     if (result.success && result.counts) {
       setToast({
         ok: true,
-        msg: `Synced: ${result.counts.customers} customers, ${result.counts.sales} sales`,
+        msg: `Synced: ${result.counts.customers} customers, ${result.counts.sales} sales, ${result.counts.topups} top-ups, ${result.counts.kpis} KPIs`,
       })
     } else {
       setToast({ ok: false, msg: result.error ?? 'Sync failed' })
