@@ -330,6 +330,42 @@ export default function SaleTrackingPage() {
     }))
   }, [visibleKPIs, sales, allUsers])
 
+  // Scope sales to selected agent/branch — mirrors computeKPIAchievement logic
+  const scopedSales = useMemo(() => {
+    if (!currentUser) return []
+    const agentId = selectedAgentId ? Number(selectedAgentId) : currentUser.id
+
+    const relevantKPIs = activeKPI ? [activeKPI] : visibleKPIs
+    if (relevantKPIs.length === 0) return sales
+
+    // Check if any KPI is agent-scoped vs shop-scoped
+    const hasAgentKPI = relevantKPIs.some((k) => k.assigneeType === 'agent')
+    const hasShopKPI = relevantKPIs.some((k) => k.assigneeType === 'shop')
+
+    // Build a set of allowed createdBy names
+    const allowedNames = new Set<string>()
+
+    if (hasAgentKPI) {
+      const agent = allUsers.find((u) => u.id === agentId)
+      if (agent) allowedNames.add(agent.fullName)
+    }
+
+    if (hasShopKPI) {
+      // For shop KPIs, include all users in the supervisor's branch
+      for (const kpi of relevantKPIs.filter((k) => k.assigneeType === 'shop')) {
+        const supervisor = allUsers.find((u) => u.id === kpi.assigneeId)
+        if (supervisor && supervisor.branch) {
+          for (const u of allUsers.filter((u) => u.branch === supervisor.branch)) {
+            allowedNames.add(u.fullName)
+          }
+        }
+      }
+    }
+
+    if (allowedNames.size === 0) return sales
+    return sales.filter((s) => allowedNames.has(s.createdBy))
+  }, [sales, currentUser, selectedAgentId, activeKPI, visibleKPIs, allUsers])
+
   // Day-by-day data for tracking tab
   const dailyData = useMemo(() => {
     const days = daysInMonth(selectedMonth)
@@ -345,16 +381,26 @@ export default function SaleTrackingPage() {
       dayMap[`${y}-${m}-${padDay(d)}`] = 0
     }
 
-    for (const sale of sales) {
+    for (const sale of scopedSales) {
       const saleDate = sale.date.slice(0, 10)
       if (!(saleDate in dayMap)) continue
 
       if (isPoint) {
+        // Only count point-type sales for point-mode KPIs (matches computeKPIAchievement)
+        if (sale.type !== 'point') continue
         dayMap[saleDate] += sale.kpiPoints ?? sale.pointsEarned ?? 0
-      } else if (activeKPI?.volumeValueMode === 'unit') {
-        dayMap[saleDate] += sale.quantity ?? 0
-      } else {
+      } else if (activeKPI?.volumeValueMode === 'currency') {
+        // Only count unit-type sales for volume-mode KPIs (matches computeKPIAchievement)
+        if (sale.type !== 'unit') continue
+        // Apply product filter if set
+        if (activeKPI.volumeProductFilter && sale.serviceName !== activeKPI.volumeProductFilter) continue
         dayMap[saleDate] += sale.totalAmount
+      } else {
+        // Volume unit mode
+        if (sale.type !== 'unit') continue
+        // Apply product filter if set on the active KPI
+        if (activeKPI?.volumeProductFilter && sale.serviceName !== activeKPI.volumeProductFilter) continue
+        dayMap[saleDate] += sale.quantity ?? 0
       }
     }
 
@@ -366,7 +412,7 @@ export default function SaleTrackingPage() {
       cumulative += val
       return { day: d, date: dateStr, dayLabel: dayName(dateStr), value: val, cumulative }
     })
-  }, [selectedMonth, sales, activeKPI, visibleKPIs])
+  }, [selectedMonth, scopedSales, activeKPI, visibleKPIs])
 
   // Summary stats for tracking
   const trackingSummary = useMemo(() => {

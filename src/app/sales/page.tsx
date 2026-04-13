@@ -625,7 +625,22 @@ export default function SalesPage() {
                   <input
                     type="number"
                     value={editForm.quantity}
-                    onChange={(e) => setEditForm({ ...editForm, quantity: e.target.value })}
+                    onChange={(e) => {
+                      const newQty = parseInt(e.target.value) || 0
+                      const pts = editingSale.serviceName ? computeItemPoints(editingSale.serviceName, newQty) : 0
+                      const rule = editingSale.serviceName
+                        ? servicePointRules.find((r) => r.serviceName === editingSale.serviceName)
+                        : null
+                      const kpi = rule
+                        ? (newQty * rule.rate) + (newQty > 0 ? rule.addOn : 0)
+                        : pts
+                      setEditForm({
+                        ...editForm,
+                        quantity: e.target.value,
+                        pointsEarned: String(pts),
+                        kpiPoints: String(kpi),
+                      })
+                    }}
                     className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
                     min="0"
                   />
