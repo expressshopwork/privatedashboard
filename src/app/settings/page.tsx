@@ -9,13 +9,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Target,
-  Sheet,
-  Loader2,
-  CheckCircle2,
-  AlertCircle,
+  FileSpreadsheet,
+  RefreshCw,
 } from 'lucide-react'
 import Modal from '@/components/Modal'
-import { syncAll } from '@/lib/googleSheets'
 import {
   getKPIs,
   addKPI,
@@ -37,6 +34,7 @@ import {
   type ServicePointRule,
   type AppUser,
 } from '@/lib/store'
+import { syncToGoogleSheets, getLastSyncTime, type SyncResult } from '@/lib/syncGoogleSheets'
 
 function currentMonth(): string {
   const d = new Date()
@@ -98,6 +96,11 @@ export default function SettingsPage() {
   const [users, setUsers] = useState<AppUser[]>([])
   const [rules, setRules] = useState<ServicePointRule[]>([])
 
+  // Sync state
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null)
+  const [lastSync, setLastSync] = useState<string | null>(null)
+
   // Modal state
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -108,13 +111,6 @@ export default function SettingsPage() {
   const [newRuleRate, setNewRuleRate] = useState('1')
   const [newRuleAddOn, setNewRuleAddOn] = useState('0')
 
-  // Google Sheets sync state
-  const [syncing, setSyncing] = useState(false)
-  const [syncResult, setSyncResult] = useState<{
-    ok: boolean
-    message: string
-  } | null>(null)
-
   const refresh = useCallback(() => {
     setKpis(getKPIs({ month }))
     setUsers(getUsers())
@@ -122,6 +118,22 @@ export default function SettingsPage() {
   }, [month])
 
   useEffect(() => { refresh() }, [refresh])
+
+  useEffect(() => {
+    setLastSync(getLastSyncTime())
+  }, [])
+
+  const handleSync = async () => {
+    setSyncing(true)
+    setSyncResult(null)
+    const result = await syncToGoogleSheets()
+    setSyncing(false)
+    setSyncResult(result)
+    if (result.success) {
+      setLastSync(getLastSyncTime())
+    }
+    setTimeout(() => setSyncResult(null), 5000)
+  }
 
   // Helpers
   const getUserName = (id: number) => users.find((u) => u.id === id)?.fullName ?? `User #${id}`
@@ -231,25 +243,6 @@ export default function SettingsPage() {
     refresh()
   }
 
-  const handleSyncSheets = async () => {
-    setSyncing(true)
-    setSyncResult(null)
-    try {
-      const counts = await syncAll()
-      setSyncResult({
-        ok: true,
-        message: `Synced successfully — ${counts.customers} customers, ${counts.sales} sales, ${counts.topups} top-ups.`,
-      })
-    } catch (err) {
-      setSyncResult({
-        ok: false,
-        message: err instanceof Error ? err.message : 'An unexpected error occurred.',
-      })
-    } finally {
-      setSyncing(false)
-    }
-  }
-
   const set = <K extends keyof KPIFormData>(key: K, val: KPIFormData[K]) =>
     setForm((prev) => ({ ...prev, [key]: val }))
 
@@ -282,6 +275,50 @@ export default function SettingsPage() {
           >
             <ChevronRight size={16} />
           </button>
+        </div>
+      </div>
+
+      {/* Google Sheets Sync */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <div className="flex items-center gap-3 pb-4 border-b mb-4">
+          <div className="p-2 bg-green-100 rounded-lg">
+            <FileSpreadsheet size={20} className="text-green-600" />
+          </div>
+          <div>
+            <h2 className="font-semibold text-gray-900">Google Sheets Sync</h2>
+            <p className="text-sm text-gray-500">
+              {lastSync
+                ? `Last synced: ${new Date(lastSync).toLocaleString()}`
+                : 'Not synced yet'}
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors text-sm"
+          >
+            {syncing ? (
+              <RefreshCw size={16} className="animate-spin" />
+            ) : (
+              <FileSpreadsheet size={16} />
+            )}
+            {syncing ? 'Syncing...' : 'Sync to Google Sheets'}
+          </button>
+          {syncResult && (
+            <div
+              className={`text-sm px-3 py-2 rounded-lg ${
+                syncResult.success
+                  ? 'bg-green-50 text-green-700'
+                  : 'bg-red-50 text-red-700'
+              }`}
+            >
+              {syncResult.success && syncResult.counts
+                ? `✓ Synced: ${syncResult.counts.customers} customers, ${syncResult.counts.sales} sales, ${syncResult.counts.topups} top-ups, ${syncResult.counts.kpis} KPIs`
+                : `✗ Error: ${syncResult.error ?? 'Unknown error'}`}
+            </div>
+          )}
         </div>
       </div>
 
@@ -464,56 +501,6 @@ export default function SettingsPage() {
             </tbody>
           </table>
         </div>
-      </div>
-
-      {/* Google Sheets Sync */}
-      <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
-        <div className="flex items-center justify-between pb-4 border-b">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-emerald-100 rounded-lg">
-              <Sheet size={20} className="text-emerald-600" />
-            </div>
-            <div>
-              <h2 className="font-semibold text-gray-900">Google Sheets Sync</h2>
-              <p className="text-sm text-gray-500">
-                Push all customers, sales, and top-ups to Google Sheets
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={handleSyncSheets}
-            disabled={syncing}
-            className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 disabled:opacity-60 transition-colors text-sm"
-          >
-            {syncing ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                Syncing…
-              </>
-            ) : (
-              <>
-                <Sheet size={16} />
-                Sync to Google Sheets
-              </>
-            )}
-          </button>
-        </div>
-        {syncResult && (
-          <div
-            className={`flex items-start gap-2 rounded-lg px-4 py-3 text-sm ${
-              syncResult.ok
-                ? 'bg-emerald-50 text-emerald-800'
-                : 'bg-red-50 text-red-800'
-            }`}
-          >
-            {syncResult.ok ? (
-              <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
-            ) : (
-              <AlertCircle size={16} className="mt-0.5 shrink-0" />
-            )}
-            <span>{syncResult.message}</span>
-          </div>
-        )}
       </div>
 
       {/* Add/Edit KPI Modal */}
