@@ -247,11 +247,11 @@ export default function SaleTrackingPage() {
     const agentId = selectedAgentId ? Number(selectedAgentId) : currentUser.id
     setKpis(getKPIs({ month: selectedMonth, assigneeId: agentId }))
 
-    // Get sales for the selected month
+    // Get sales for the selected month (use end-of-day for inclusive last day)
     const [y, m] = selectedMonth.split('-')
     const from = `${y}-${m}-01`
     const lastDay = daysInMonth(selectedMonth)
-    const to = `${y}-${m}-${padDay(lastDay)}`
+    const to = `${y}-${m}-${padDay(lastDay)}T23:59:59`
     setSales(getSales({ from, to }))
   }, [selectedMonth, selectedAgentId, currentUser])
 
@@ -452,22 +452,37 @@ export default function SaleTrackingPage() {
     // "All KPIs" — show aggregate point-based summary if any
     const pointKpis = visibleKPIs.filter((k) => k.mode === 'point')
     if (pointKpis.length > 0) {
+      const min = pointKpis.reduce((s, k) => s + (k.pointMin ?? 0), 0)
       const gate = pointKpis.reduce((s, k) => s + (k.pointGate ?? 0), 0)
+      const otb = pointKpis.reduce((s, k) => s + (k.pointOtb ?? 0), 0)
+      const oab = pointKpis.reduce((s, k) => s + (k.pointOab ?? 0), 0)
       const remaining2 = remainingDays(selectedMonth)
       const dailyNeeded = total >= gate || remaining2 <= 0 ? null : (gate - total) / remaining2
+      // Calculate tier based on aggregated thresholds
+      let aggTier: 'oab' | 'otb' | 'gate' | 'min' | 'below' = 'below'
+      if (total >= oab && oab > 0) aggTier = 'oab'
+      else if (total >= otb && otb > 0) aggTier = 'otb'
+      else if (total >= gate && gate > 0) aggTier = 'gate'
+      else if (total >= min && min > 0) aggTier = 'min'
       return {
         mode: 'point' as const,
         total,
-        min: pointKpis.reduce((s, k) => s + (k.pointMin ?? 0), 0),
+        min,
         gate,
-        otb: pointKpis.reduce((s, k) => s + (k.pointOtb ?? 0), 0),
-        oab: pointKpis.reduce((s, k) => s + (k.pointOab ?? 0), 0),
+        otb,
+        oab,
         dailyNeeded,
-        tier: 'below' as const,
+        tier: aggTier,
       }
     }
 
-    return { mode: 'volume' as const, total, target: 0, actual: total, dailyNeeded: null, tier: 'below' as const, valueMode: 'unit' as const }
+    // All KPIs — aggregate volume targets
+    const volumeKpis = visibleKPIs.filter((k) => k.mode === 'volume')
+    const aggTarget = volumeKpis.reduce((s, k) => s + (k.volumeTarget ?? 0), 0)
+    const aggRemaining = remainingDays(selectedMonth)
+    const aggDailyNeeded = total >= aggTarget || aggRemaining <= 0 ? null : (aggTarget - total) / aggRemaining
+    const aggTierVol: 'gate' | 'below' = aggTarget > 0 && total >= aggTarget ? 'gate' : 'below'
+    return { mode: 'volume' as const, total, target: aggTarget, actual: total, dailyNeeded: aggDailyNeeded, tier: aggTierVol, valueMode: 'unit' as const }
   }, [dailyData, activeKPI, achievements, visibleKPIs, selectedMonth])
 
   const todayStr = new Date().toISOString().slice(0, 10)
@@ -602,6 +617,11 @@ function TrackingTab({
         : 'units'
     : 'pts'
 
+  // Determine target threshold for status column
+  const statusTarget = summary.mode === 'point'
+    ? summary.gate
+    : summary.target
+
   return (
     <div className="space-y-6">
       {/* ── Summary cards ── */}
@@ -648,11 +668,50 @@ function TrackingTab({
                 <th className="px-4 py-3 font-medium text-gray-500">Day</th>
                 <th className="px-4 py-3 font-medium text-gray-500 text-right">Daily ({unitLabel})</th>
                 <th className="px-4 py-3 font-medium text-gray-500 text-right">Cumulative</th>
+                <th className="px-4 py-3 font-medium text-gray-500 text-center">Status</th>
               </tr>
             </thead>
             <tbody>
               {dailyData.map((row) => {
                 const isToday = row.date === todayStr
+                const isFuture = row.date > todayStr
+                // Determine status based on cumulative progress vs target
+                let statusLabel: string
+                let statusStyle: string
+                if (summary.mode === 'point') {
+                  // Point mode: check tier thresholds
+                  if (row.cumulative >= summary.oab && summary.oab > 0) {
+                    statusLabel = 'OAB ✓'
+                    statusStyle = 'bg-green-100 text-green-800'
+                  } else if (row.cumulative >= summary.otb && summary.otb > 0) {
+                    statusLabel = 'OTB ✓'
+                    statusStyle = 'bg-blue-100 text-blue-800'
+                  } else if (row.cumulative >= summary.gate && summary.gate > 0) {
+                    statusLabel = 'Gate ✓'
+                    statusStyle = 'bg-yellow-100 text-yellow-800'
+                  } else if (row.cumulative >= summary.min && summary.min > 0) {
+                    statusLabel = 'MIN ✓'
+                    statusStyle = 'bg-orange-100 text-orange-800'
+                  } else if (isFuture || (row.value === 0 && row.cumulative === 0)) {
+                    statusLabel = 'Pending'
+                    statusStyle = 'bg-gray-100 text-gray-500'
+                  } else {
+                    statusLabel = 'Earning'
+                    statusStyle = 'bg-blue-50 text-blue-600'
+                  }
+                } else {
+                  // Volume mode: check against target
+                  if (statusTarget > 0 && row.cumulative >= statusTarget) {
+                    statusLabel = 'Earned ✓'
+                    statusStyle = 'bg-green-100 text-green-800'
+                  } else if (isFuture || (row.value === 0 && row.cumulative === 0)) {
+                    statusLabel = 'Pending'
+                    statusStyle = 'bg-gray-100 text-gray-500'
+                  } else {
+                    statusLabel = 'Earning'
+                    statusStyle = 'bg-blue-50 text-blue-600'
+                  }
+                }
                 return (
                   <tr
                     key={row.date}
@@ -669,12 +728,17 @@ function TrackingTab({
                       {fmtNum(row.value)}
                     </td>
                     <td className="px-4 py-2.5 text-right font-medium">{fmtNum(row.cumulative)}</td>
+                    <td className="px-4 py-2.5 text-center">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusStyle}`}>
+                        {statusLabel}
+                      </span>
+                    </td>
                   </tr>
                 )
               })}
               {dailyData.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-gray-400">
+                  <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
                     No data for this month
                   </td>
                 </tr>
